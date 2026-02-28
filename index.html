@@ -503,6 +503,77 @@ body::before {
 
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); }
 
+/* Voice input button for settings */
+.voice-input-btn {
+  width: 44px; height: 44px; border-radius: 10px;
+  border: 1.5px solid var(--border); background: var(--surface);
+  color: var(--text-dim); cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0; transition: all 0.25s;
+}
+.voice-input-btn:hover { border-color: var(--cyan); color: var(--cyan); }
+.voice-input-btn.listening {
+  border-color: var(--red); color: var(--red);
+  background: var(--red-dim);
+  animation: pulse-ring 1.8s ease-in-out infinite;
+}
+
+/* Genba selector */
+.genba-selector {
+  margin-bottom: 16px;
+  padding: 14px 16px;
+  background: var(--surface);
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius);
+}
+.genba-new-btn {
+  display: flex; align-items: center; gap: 8px;
+  width: 100%; padding: 12px 16px;
+  background: var(--cyan-dim); border: 1.5px solid rgba(0,229,255,0.2);
+  border-radius: var(--radius-sm); color: var(--cyan);
+  font-size: 13px; font-weight: 600; cursor: pointer;
+  transition: all 0.2s;
+}
+.genba-new-btn:hover { background: rgba(0,229,255,0.18); }
+.genba-past-item {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 14px; margin-top: 6px;
+  background: var(--surface2); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); cursor: pointer;
+  transition: all 0.2s;
+}
+.genba-past-item:hover { border-color: var(--amber); }
+.genba-past-name { font-size: 13px; font-weight: 600; color: var(--text); }
+.genba-past-detail { font-size: 11px; color: var(--text-dim); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 220px; }
+.genba-past-count { font-size: 11px; color: var(--amber); font-weight: 600; white-space: nowrap; }
+.genba-active-card {
+  display: flex; align-items: center; gap: 12px;
+}
+.genba-active-info {
+  flex: 1; min-width: 0; cursor: pointer;
+}
+.genba-active-name {
+  font-size: 14px; font-weight: 700; color: var(--amber);
+  display: flex; align-items: center; gap: 6px;
+}
+.genba-active-name::before {
+  content: ''; width: 8px; height: 8px; border-radius: 50%;
+  background: var(--amber); flex-shrink: 0;
+  box-shadow: 0 0 6px var(--amber);
+}
+.genba-active-detail {
+  font-size: 11px; color: var(--text-dim); margin-top: 3px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.genba-switch-btn {
+  width: 38px; height: 38px; border-radius: 10px;
+  border: 1.5px solid var(--border); background: var(--surface2);
+  color: var(--text-dim); cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0; transition: all 0.2s;
+}
+.genba-switch-btn:hover { border-color: var(--cyan); color: var(--cyan); }
+
 /* Debug info */
 .debug-info {
   margin-top: 12px; padding: 10px;
@@ -538,6 +609,33 @@ body::before {
   <!-- RECORD PAGE -->
   <div class="page active" id="page-record">
 
+    <!-- Genba (workplace) selector -->
+    <div class="genba-selector" id="genbaSelector">
+      <!-- No active genba state -->
+      <div id="genbaEmpty">
+        <div style="font-size:12px;color:var(--text-dim);margin-bottom:10px;font-weight:600;letter-spacing:0.5px">現場を選択してください</div>
+        <button class="genba-new-btn" onclick="openGenbaModal('new')">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          新しい現場を開始
+        </button>
+        <div id="genbaPastList" style="margin-top:10px"></div>
+      </div>
+      <!-- Active genba state -->
+      <div id="genbaActive" style="display:none">
+        <div class="genba-active-card">
+          <div class="genba-active-info" onclick="openGenbaModal('edit')">
+            <div class="genba-active-name" id="genbaActiveName"></div>
+            <div class="genba-active-detail" id="genbaActiveDetail"></div>
+          </div>
+          <div class="genba-active-actions">
+            <button class="genba-switch-btn" onclick="switchGenba()" title="現場を切替">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/></svg>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <div class="photo-capture" id="photoCapture" onclick="document.getElementById('fileInput').click()">
       <input type="file" accept="image/*" capture="environment" id="fileInput" class="sr-only">
       <img id="photoPreview" src="" alt="">
@@ -552,12 +650,6 @@ body::before {
       </div>
       <div class="photo-badge">PHOTO ATTACHED</div>
       <button class="photo-remove-btn" onclick="event.stopPropagation();removePhoto()">✕</button>
-    </div>
-
-    <!-- Current context badge -->
-    <div id="contextBadge" style="display:none;margin-bottom:12px;padding:8px 14px;border-radius:8px;background:var(--amber-dim);border:1px solid rgba(255,171,0,0.15);font-size:12px;color:var(--amber)">
-      <span style="font-weight:600">現場:</span> <span id="contextBadgeText"></span>
-      <span style="float:right;opacity:0.6;cursor:pointer" onclick="document.querySelectorAll('.nav-tab')[3].click()">変更</span>
     </div>
 
     <!-- Input mode selector -->
@@ -702,15 +794,6 @@ body::before {
       </div>
     </div>
     <div class="settings-group">
-      <div class="settings-group-title">現場設定</div>
-      <div class="setting-row">
-        <div class="setting-label">現場の説明</div>
-        <div class="setting-desc">現場名や前提条件を入力するとAIの精度が上がります。空欄なら汎用モードで動作します。</div>
-        <input class="setting-input" id="contextInput" type="text" placeholder="例：小野刃物 ロータリー水研機"  style="margin-bottom:8px">
-        <textarea class="manual-textarea" id="contextDetailInput" rows="3" placeholder="詳細な前提条件（任意）&#10;例：鍛造包丁の刃付け研削工程 / 砥石は#400〜#1000を使用 / 送り速度・研削深さの管理が重要" style="min-height:70px"></textarea>
-      </div>
-    </div>
-    <div class="settings-group">
       <div class="settings-group-title">デバッグ</div>
       <div class="setting-row">
         <div class="setting-label">デバッグ表示</div>
@@ -757,6 +840,34 @@ body::before {
   </div>
 </div>
 
+<!-- Genba (workplace) modal -->
+<div class="modal-overlay" id="genbaModal" onclick="closeGenbaModal()">
+  <div class="modal-sheet" onclick="event.stopPropagation()">
+    <div class="modal-handle"></div>
+    <div style="font-size:15px;font-weight:700;margin-bottom:16px" id="genbaModalTitle">新しい現場を開始</div>
+    <div style="margin-bottom:12px">
+      <div style="font-size:11px;font-weight:600;color:var(--text-dim);letter-spacing:1px;margin-bottom:6px">現場名</div>
+      <div style="display:flex;gap:8px">
+        <input class="setting-input" id="genbaNameInput" type="text" placeholder="例：ロータリー水研機" style="flex:1">
+        <button class="voice-input-btn" id="voiceBtnGenbaName" onclick="toggleVoiceInput('genbaNameInput', 'voiceBtnGenbaName')" title="音声入力">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0014 0"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+        </button>
+      </div>
+    </div>
+    <div style="margin-bottom:16px">
+      <div style="font-size:11px;font-weight:600;color:var(--text-dim);letter-spacing:1px;margin-bottom:6px">詳細・前提条件（任意）</div>
+      <div style="display:flex;gap:8px">
+        <textarea class="manual-textarea" id="genbaDetailInput" rows="3" placeholder="例：鍛造包丁の刃付け研削工程&#10;砥石は#400〜#1000を使用&#10;送り速度・研削深さの管理が重要" style="min-height:80px;flex:1"></textarea>
+        <button class="voice-input-btn" id="voiceBtnGenbaDetail" onclick="toggleVoiceInput('genbaDetailInput', 'voiceBtnGenbaDetail')" title="音声入力" style="align-self:flex-start">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0014 0"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+        </button>
+      </div>
+    </div>
+    <button class="save-btn save-btn-primary" style="width:100%;border-radius:10px" id="genbaSaveBtn" onclick="saveGenba()">この現場で開始</button>
+    <button class="modal-close" style="margin-top:10px" onclick="closeGenbaModal()">キャンセル</button>
+  </div>
+</div>
+
 <script>
 // ===== STATE =====
 let state = {
@@ -766,7 +877,9 @@ let state = {
   transcript: '', interimTranscript: '',
   aiCorrected: '', aiStructured: null,
   records: [], dictionary: [],
-  apiKey: '', context: '', contextDetail: '',
+  genbas: [], // {id, name, detail, createdAt}
+  activeGenbaId: null,
+  apiKey: '',
   mode: 'voice',
   debugMode: false,
   speechSupported: false,
@@ -776,9 +889,9 @@ let state = {
 try {
   state.records = JSON.parse(localStorage.getItem('gn_records') || '[]');
   state.dictionary = JSON.parse(localStorage.getItem('gn_dict') || '[]');
+  state.genbas = JSON.parse(localStorage.getItem('gn_genbas') || '[]');
+  state.activeGenbaId = localStorage.getItem('gn_active_genba') || null;
   state.apiKey = localStorage.getItem('gn_apikey') || '';
-  state.context = localStorage.getItem('gn_context') || '';
-  state.contextDetail = localStorage.getItem('gn_context_detail') || '';
   state.debugMode = localStorage.getItem('gn_debug') === 'true';
 } catch(e) {}
 
@@ -1106,8 +1219,9 @@ async function processWithAI(text, processingId, resultId, correctedId, correcte
   document.getElementById(resultId).classList.remove('visible');
 
   const dictWords = state.dictionary.join('、');
-  const contextName = state.context || '';
-  const contextDesc = state.contextDetail || '';
+  const genba = getActiveGenba();
+  const contextName = genba ? genba.name : '';
+  const contextDesc = genba ? genba.detail : '';
   const hasContext = contextName || contextDesc;
 
   const contextBlock = hasContext
@@ -1213,14 +1327,16 @@ function saveRecord() {
     text = document.getElementById('manualText').value.trim();
   }
 
+  const genba = getActiveGenba();
   const rec = {
     id: Date.now(),
     photo: state.photo,
     transcript: text,
     corrected: state.aiCorrected || text,
     structured: state.aiStructured,
-    context: state.context || '',
-    contextDetail: state.contextDetail || '',
+    genbaId: state.activeGenbaId || null,
+    context: genba ? genba.name : '',
+    contextDetail: genba ? genba.detail : '',
     timestamp: new Date().toISOString(),
     duration: state.seconds,
   };
@@ -1273,13 +1389,24 @@ function renderHistory() {
   const list = document.getElementById('historyList');
   const today = new Date().toDateString();
 
-  // Collect unique context names for filter
-  const contexts = [...new Set(state.records.map(r => r.context || '').filter(c => c))];
+  // Collect unique genba names for filter (from genbas list + records)
+  const genbaMap = {};
+  state.genbas.forEach(g => { genbaMap[g.id] = g.name; });
+  // Also handle records without genbaId (legacy) that have context
+  const filterOptions = [];
+  const seen = new Set();
+  state.records.forEach(r => {
+    const key = r.genbaId || r.context || '';
+    if (!key || seen.has(key)) return;
+    seen.add(key);
+    filterOptions.push({ key, label: genbaMap[r.genbaId] || r.context || key });
+  });
+
   const activeFilter = state.historyFilter || '';
 
   // Filter records
   const filtered = activeFilter
-    ? state.records.filter(r => (r.context || '') === activeFilter)
+    ? state.records.filter(r => (r.genbaId || r.context || '') === activeFilter)
     : state.records;
 
   document.getElementById('statTotal').textContent = filtered.length;
@@ -1289,7 +1416,7 @@ function renderHistory() {
   list.innerHTML = '';
 
   // Filter buttons
-  if (contexts.length > 0) {
+  if (filterOptions.length > 0) {
     const filterBar = document.createElement('div');
     filterBar.style.cssText = 'display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap;';
     const allBtn = document.createElement('button');
@@ -1297,11 +1424,11 @@ function renderHistory() {
     allBtn.className = 'mode-btn' + (!activeFilter ? ' active' : '');
     allBtn.onclick = () => { state.historyFilter = ''; renderHistory(); };
     filterBar.appendChild(allBtn);
-    contexts.forEach(ctx => {
+    filterOptions.forEach(opt => {
       const btn = document.createElement('button');
-      btn.textContent = ctx;
-      btn.className = 'mode-btn' + (activeFilter === ctx ? ' active' : '');
-      btn.onclick = () => { state.historyFilter = ctx; renderHistory(); };
+      btn.textContent = opt.label;
+      btn.className = 'mode-btn' + (activeFilter === opt.key ? ' active' : '');
+      btn.onclick = () => { state.historyFilter = opt.key; renderHistory(); };
       filterBar.appendChild(btn);
     });
     list.appendChild(filterBar);
@@ -1325,8 +1452,9 @@ function renderHistory() {
       ? `<img class="history-thumb" src="${rec.photo}">`
       : `<div class="history-thumb-empty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0014 0"/></svg></div>`;
     const text = rec.corrected || rec.transcript || '（メモなし）';
+    const genbaName = genbaMap[rec.genbaId] || rec.context || '';
     let tags = '';
-    if (rec.context) tags += `<span class="history-tag" style="background:var(--amber-dim);color:var(--amber);border-color:rgba(255,171,0,0.15)">${escapeHtml(rec.context)}</span>`;
+    if (genbaName) tags += `<span class="history-tag" style="background:var(--amber-dim);color:var(--amber);border-color:rgba(255,171,0,0.15)">${escapeHtml(genbaName)}</span>`;
     if (rec.structured) {
       tags += Object.keys(rec.structured).slice(0,2).map(k => `<span class="history-tag">${escapeHtml(k)}</span>`).join('');
     }
@@ -1406,18 +1534,11 @@ function renderDict() {
 // ===== SETTINGS =====
 function loadSettings() {
   document.getElementById('apiKeyInput').value = state.apiKey;
-  document.getElementById('contextInput').value = state.context;
-  document.getElementById('contextDetailInput').value = state.contextDetail;
 }
 
 function saveSettings() {
   state.apiKey = document.getElementById('apiKeyInput').value.trim();
-  state.context = document.getElementById('contextInput').value.trim();
-  state.contextDetail = document.getElementById('contextDetailInput').value.trim();
   localStorage.setItem('gn_apikey', state.apiKey);
-  localStorage.setItem('gn_context', state.context);
-  localStorage.setItem('gn_context_detail', state.contextDetail);
-  updateContextBadge();
   showToast('設定を保存しました');
 }
 
@@ -1429,7 +1550,7 @@ function toggleDebug() {
 }
 
 function exportData() {
-  const data = { records: state.records, dictionary: state.dictionary, context: state.context, exportedAt: new Date().toISOString() };
+  const data = { records: state.records, dictionary: state.dictionary, genbas: state.genbas, exportedAt: new Date().toISOString() };
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
@@ -1456,22 +1577,204 @@ function escapeHtml(t) {
   return d.innerHTML;
 }
 
-// ===== INIT =====
-function updateContextBadge() {
-  const badge = document.getElementById('contextBadge');
-  const text = document.getElementById('contextBadgeText');
-  if (state.context) {
-    badge.style.display = 'block';
-    text.textContent = state.context;
+// ===== GENBA (WORKPLACE) MANAGEMENT =====
+let genbaEditMode = 'new'; // 'new' or 'edit'
+
+function getActiveGenba() {
+  if (!state.activeGenbaId) return null;
+  return state.genbas.find(g => g.id === state.activeGenbaId) || null;
+}
+
+function saveGenbas() {
+  localStorage.setItem('gn_genbas', JSON.stringify(state.genbas));
+  localStorage.setItem('gn_active_genba', state.activeGenbaId || '');
+}
+
+function renderGenbaSelector() {
+  const genba = getActiveGenba();
+  const emptyEl = document.getElementById('genbaEmpty');
+  const activeEl = document.getElementById('genbaActive');
+
+  if (genba) {
+    emptyEl.style.display = 'none';
+    activeEl.style.display = 'block';
+    document.getElementById('genbaActiveName').textContent = genba.name;
+    document.getElementById('genbaActiveDetail').textContent = genba.detail || '（タップで詳細を編集）';
   } else {
-    badge.style.display = 'none';
+    emptyEl.style.display = 'block';
+    activeEl.style.display = 'none';
+    renderGenbaPastList();
   }
 }
 
+function renderGenbaPastList() {
+  const list = document.getElementById('genbaPastList');
+  list.innerHTML = '';
+  if (state.genbas.length === 0) return;
+  const label = document.createElement('div');
+  label.style.cssText = 'font-size:11px;color:var(--text-dim);margin-bottom:6px;font-weight:600;letter-spacing:0.5px';
+  label.textContent = '過去の現場に戻る';
+  list.appendChild(label);
+  state.genbas.forEach(g => {
+    const count = state.records.filter(r => r.genbaId === g.id).length;
+    const item = document.createElement('div');
+    item.className = 'genba-past-item';
+    item.onclick = () => { activateGenba(g.id); };
+    item.innerHTML = `<div><div class="genba-past-name">${escapeHtml(g.name)}</div>${g.detail ? '<div class="genba-past-detail">' + escapeHtml(g.detail) + '</div>' : ''}</div><div class="genba-past-count">${count}件</div>`;
+    list.appendChild(item);
+  });
+}
+
+function openGenbaModal(mode) {
+  genbaEditMode = mode;
+  const title = document.getElementById('genbaModalTitle');
+  const btn = document.getElementById('genbaSaveBtn');
+  if (mode === 'new') {
+    title.textContent = '新しい現場を開始';
+    btn.textContent = 'この現場で開始';
+    document.getElementById('genbaNameInput').value = '';
+    document.getElementById('genbaDetailInput').value = '';
+  } else {
+    title.textContent = '現場を編集';
+    btn.textContent = '更新する';
+    const genba = getActiveGenba();
+    if (genba) {
+      document.getElementById('genbaNameInput').value = genba.name;
+      document.getElementById('genbaDetailInput').value = genba.detail || '';
+    }
+  }
+  document.getElementById('genbaModal').classList.add('open');
+  document.body.style.overflow = 'hidden';
+}
+
+function closeGenbaModal() {
+  document.getElementById('genbaModal').classList.remove('open');
+  document.body.style.overflow = '';
+  // Stop any active voice input
+  if (settingsRecognition) {
+    settingsRecognition.abort();
+    settingsRecognition = null;
+    document.querySelectorAll('.voice-input-btn.listening').forEach(b => b.classList.remove('listening'));
+  }
+}
+
+function saveGenba() {
+  const name = document.getElementById('genbaNameInput').value.trim();
+  const detail = document.getElementById('genbaDetailInput').value.trim();
+  if (!name) {
+    showToast('現場名を入力してください', 'error');
+    return;
+  }
+
+  if (genbaEditMode === 'new') {
+    const genba = {
+      id: 'genba_' + Date.now(),
+      name: name,
+      detail: detail,
+      createdAt: new Date().toISOString(),
+    };
+    state.genbas.push(genba);
+    state.activeGenbaId = genba.id;
+    showToast('「' + name + '」を開始しました');
+  } else {
+    const genba = getActiveGenba();
+    if (genba) {
+      genba.name = name;
+      genba.detail = detail;
+      showToast('現場情報を更新しました');
+    }
+  }
+
+  saveGenbas();
+  renderGenbaSelector();
+  closeGenbaModal();
+}
+
+function activateGenba(id) {
+  state.activeGenbaId = id;
+  saveGenbas();
+  renderGenbaSelector();
+  const genba = getActiveGenba();
+  if (genba) showToast('「' + genba.name + '」に切り替えました');
+}
+
+function switchGenba() {
+  state.activeGenbaId = null;
+  renderGenbaSelector();
+}
+
+// ===== VOICE INPUT FOR SETTINGS =====
+let settingsRecognition = null;
+
+function toggleVoiceInput(targetId, btnId) {
+  const btn = document.getElementById(btnId);
+
+  // If already listening, stop
+  if (settingsRecognition) {
+    settingsRecognition.abort();
+    settingsRecognition = null;
+    btn.classList.remove('listening');
+    return;
+  }
+
+  if (!SpeechR) {
+    showToast('この端末では音声入力に対応していません', 'error');
+    return;
+  }
+
+  const sr = new SpeechR();
+  sr.lang = 'ja-JP';
+  sr.interimResults = true;
+  sr.continuous = false;
+
+  const target = document.getElementById(targetId);
+  const isTextarea = target.tagName === 'TEXTAREA';
+  const originalValue = target.value;
+
+  btn.classList.add('listening');
+  settingsRecognition = sr;
+
+  sr.onresult = e => {
+    let interim = '';
+    let final = '';
+    for (let i = e.resultIndex; i < e.results.length; i++) {
+      const t = e.results[i][0].transcript;
+      if (e.results[i].isFinal) final += t;
+      else interim += t;
+    }
+    // Append to existing value
+    if (final) {
+      target.value = (target.value ? target.value + (isTextarea ? '\n' : ' ') : '') + final;
+    }
+  };
+
+  sr.onend = () => {
+    btn.classList.remove('listening');
+    settingsRecognition = null;
+  };
+
+  sr.onerror = e => {
+    btn.classList.remove('listening');
+    settingsRecognition = null;
+    if (e.error === 'not-allowed') {
+      showToast('マイクの権限がありません', 'error');
+    }
+  };
+
+  try {
+    sr.start();
+    showToast('音声入力中...話し終わると自動停止します', 'info');
+  } catch(e) {
+    btn.classList.remove('listening');
+    settingsRecognition = null;
+  }
+}
+
+// ===== INIT =====
 renderDict();
 renderHistory();
 updateSave();
-updateContextBadge();
+renderGenbaSelector();
 debugLog('GENBA NOTE 初期化完了');
 debugLog('Speech API: ' + (state.speechSupported ? '対応' : '非対応'));
 debugLog('UA: ' + navigator.userAgent.substring(0, 80));
