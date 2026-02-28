@@ -554,6 +554,12 @@ body::before {
       <button class="photo-remove-btn" onclick="event.stopPropagation();removePhoto()">✕</button>
     </div>
 
+    <!-- Current context badge -->
+    <div id="contextBadge" style="display:none;margin-bottom:12px;padding:8px 14px;border-radius:8px;background:var(--amber-dim);border:1px solid rgba(255,171,0,0.15);font-size:12px;color:var(--amber)">
+      <span style="font-weight:600">現場:</span> <span id="contextBadgeText"></span>
+      <span style="float:right;opacity:0.6;cursor:pointer" onclick="document.querySelectorAll('.nav-tab')[3].click()">変更</span>
+    </div>
+
     <!-- Input mode selector -->
     <div class="mode-selector" style="margin-top:16px">
       <button class="mode-btn active" id="modeVoice" onclick="setMode('voice')">🎤 音声メモ</button>
@@ -696,11 +702,12 @@ body::before {
       </div>
     </div>
     <div class="settings-group">
-      <div class="settings-group-title">AI 整理設定</div>
+      <div class="settings-group-title">現場設定</div>
       <div class="setting-row">
         <div class="setting-label">現場の説明</div>
-        <div class="setting-desc">AIがメモを整理する際の文脈情報。</div>
-        <input class="setting-input" id="contextInput" type="text" placeholder="ロータリー水研機による金属加工の現場">
+        <div class="setting-desc">現場名や前提条件を入力するとAIの精度が上がります。空欄なら汎用モードで動作します。</div>
+        <input class="setting-input" id="contextInput" type="text" placeholder="例：小野刃物 ロータリー水研機"  style="margin-bottom:8px">
+        <textarea class="manual-textarea" id="contextDetailInput" rows="3" placeholder="詳細な前提条件（任意）&#10;例：鍛造包丁の刃付け研削工程 / 砥石は#400〜#1000を使用 / 送り速度・研削深さの管理が重要" style="min-height:70px"></textarea>
       </div>
     </div>
     <div class="settings-group">
@@ -759,17 +766,19 @@ let state = {
   transcript: '', interimTranscript: '',
   aiCorrected: '', aiStructured: null,
   records: [], dictionary: [],
-  apiKey: '', context: '',
-  mode: 'voice', // 'voice' or 'text'
+  apiKey: '', context: '', contextDetail: '',
+  mode: 'voice',
   debugMode: false,
   speechSupported: false,
+  historyFilter: '',
 };
 
 try {
   state.records = JSON.parse(localStorage.getItem('gn_records') || '[]');
   state.dictionary = JSON.parse(localStorage.getItem('gn_dict') || '[]');
   state.apiKey = localStorage.getItem('gn_apikey') || '';
-  state.context = localStorage.getItem('gn_context') || 'ロータリー水研機による金属加工の現場';
+  state.context = localStorage.getItem('gn_context') || '';
+  state.contextDetail = localStorage.getItem('gn_context_detail') || '';
   state.debugMode = localStorage.getItem('gn_debug') === 'true';
 } catch(e) {}
 
@@ -1097,14 +1106,22 @@ async function processWithAI(text, processingId, resultId, correctedId, correcte
   document.getElementById(resultId).classList.remove('visible');
 
   const dictWords = state.dictionary.join('、');
-  const systemPrompt = `あなたは製造現場の音声メモを整理するアシスタントです。
-現場の文脈: ${state.context}
+  const contextName = state.context || '';
+  const contextDesc = state.contextDetail || '';
+  const hasContext = contextName || contextDesc;
 
-以下の専門用語が使われる現場です:
-${dictWords || '（用語未登録）'}
+  const contextBlock = hasContext
+    ? `現場の文脈: ${contextName}${contextDesc ? '\n詳細: ' + contextDesc : ''}\n`
+    : '（現場の設定なし — 汎用モードで整理します）\n';
 
+  const dictBlock = dictWords
+    ? `以下の専門用語が使われます:\n${dictWords}\n`
+    : '';
+
+  const systemPrompt = `あなたは音声メモを整理するアシスタントです。
+${contextBlock}${dictBlock}
 タスク:
-1. 音声認識の誤変換を文脈と専門用語リストから推測して修正する
+1. 音声認識の誤変換を文脈や専門用語リストがあればそれを参考に修正する
 2. 修正したテキストを「corrected」フィールドに入れる
 3. 内容を構造化して「structured」フィールドにオブジェクトとして入れる
    項目例: カテゴリ, 作業内容, 理由, 設定値, 結果, 補足, 改善案 など（内容に応じて適切に選ぶ）
@@ -1202,6 +1219,8 @@ function saveRecord() {
     transcript: text,
     corrected: state.aiCorrected || text,
     structured: state.aiStructured,
+    context: state.context || '',
+    contextDetail: state.contextDetail || '',
     timestamp: new Date().toISOString(),
     duration: state.seconds,
   };
@@ -1253,29 +1272,64 @@ document.getElementById('transcriptEditArea')?.addEventListener('input', updateS
 function renderHistory() {
   const list = document.getElementById('historyList');
   const today = new Date().toDateString();
-  document.getElementById('statTotal').textContent = state.records.length;
-  document.getElementById('statToday').textContent = state.records.filter(r => new Date(r.timestamp).toDateString() === today).length;
-  document.getElementById('statPhotos').textContent = state.records.filter(r => r.photo).length;
+
+  // Collect unique context names for filter
+  const contexts = [...new Set(state.records.map(r => r.context || '').filter(c => c))];
+  const activeFilter = state.historyFilter || '';
+
+  // Filter records
+  const filtered = activeFilter
+    ? state.records.filter(r => (r.context || '') === activeFilter)
+    : state.records;
+
+  document.getElementById('statTotal').textContent = filtered.length;
+  document.getElementById('statToday').textContent = filtered.filter(r => new Date(r.timestamp).toDateString() === today).length;
+  document.getElementById('statPhotos').textContent = filtered.filter(r => r.photo).length;
+
   list.innerHTML = '';
 
-  if (state.records.length === 0) {
-    list.innerHTML = `<div class="empty-state">
+  // Filter buttons
+  if (contexts.length > 0) {
+    const filterBar = document.createElement('div');
+    filterBar.style.cssText = 'display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap;';
+    const allBtn = document.createElement('button');
+    allBtn.textContent = 'すべて';
+    allBtn.className = 'mode-btn' + (!activeFilter ? ' active' : '');
+    allBtn.onclick = () => { state.historyFilter = ''; renderHistory(); };
+    filterBar.appendChild(allBtn);
+    contexts.forEach(ctx => {
+      const btn = document.createElement('button');
+      btn.textContent = ctx;
+      btn.className = 'mode-btn' + (activeFilter === ctx ? ' active' : '');
+      btn.onclick = () => { state.historyFilter = ctx; renderHistory(); };
+      filterBar.appendChild(btn);
+    });
+    list.appendChild(filterBar);
+  }
+
+  if (filtered.length === 0) {
+    list.innerHTML += `<div class="empty-state">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0014 0"/></svg>
       <p>まだ記録がありません<br>記録タブから最初のメモを追加しましょう</p></div>`;
     return;
   }
 
-  state.records.forEach((rec, idx) => {
+  filtered.forEach((rec, idx) => {
+    const realIdx = state.records.indexOf(rec);
     const item = document.createElement('div');
     item.className = 'history-item';
-    item.onclick = () => openModal(idx);
+    item.onclick = () => openModal(realIdx);
     const dt = new Date(rec.timestamp);
     const ds = `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')} ${String(dt.getHours()).padStart(2,'0')}:${String(dt.getMinutes()).padStart(2,'0')}`;
     const thumb = rec.photo
       ? `<img class="history-thumb" src="${rec.photo}">`
       : `<div class="history-thumb-empty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0014 0"/></svg></div>`;
     const text = rec.corrected || rec.transcript || '（メモなし）';
-    const tags = rec.structured ? Object.keys(rec.structured).slice(0,2).map(k => `<span class="history-tag">${escapeHtml(k)}</span>`).join('') : '';
+    let tags = '';
+    if (rec.context) tags += `<span class="history-tag" style="background:var(--amber-dim);color:var(--amber);border-color:rgba(255,171,0,0.15)">${escapeHtml(rec.context)}</span>`;
+    if (rec.structured) {
+      tags += Object.keys(rec.structured).slice(0,2).map(k => `<span class="history-tag">${escapeHtml(k)}</span>`).join('');
+    }
     item.innerHTML = `${thumb}<div class="history-body"><div class="history-text">${escapeHtml(text)}</div><div class="history-meta">${ds}</div><div class="history-tags">${tags}</div></div>`;
     list.appendChild(item);
   });
@@ -1300,7 +1354,9 @@ function openModal(idx) {
     }
   } else aiEl.style.display = 'none';
   const dt = new Date(rec.timestamp);
-  document.getElementById('modalMeta').textContent = dt.toLocaleDateString('ja-JP') + ' ' + dt.toLocaleTimeString('ja-JP',{hour:'2-digit',minute:'2-digit'});
+  let metaText = dt.toLocaleDateString('ja-JP') + ' ' + dt.toLocaleTimeString('ja-JP',{hour:'2-digit',minute:'2-digit'});
+  if (rec.context) metaText += '  |  現場: ' + rec.context;
+  document.getElementById('modalMeta').textContent = metaText;
   document.getElementById('modal').classList.add('open');
   document.body.style.overflow = 'hidden';
 }
@@ -1351,13 +1407,17 @@ function renderDict() {
 function loadSettings() {
   document.getElementById('apiKeyInput').value = state.apiKey;
   document.getElementById('contextInput').value = state.context;
+  document.getElementById('contextDetailInput').value = state.contextDetail;
 }
 
 function saveSettings() {
   state.apiKey = document.getElementById('apiKeyInput').value.trim();
   state.context = document.getElementById('contextInput').value.trim();
+  state.contextDetail = document.getElementById('contextDetailInput').value.trim();
   localStorage.setItem('gn_apikey', state.apiKey);
   localStorage.setItem('gn_context', state.context);
+  localStorage.setItem('gn_context_detail', state.contextDetail);
+  updateContextBadge();
   showToast('設定を保存しました');
 }
 
@@ -1397,9 +1457,21 @@ function escapeHtml(t) {
 }
 
 // ===== INIT =====
+function updateContextBadge() {
+  const badge = document.getElementById('contextBadge');
+  const text = document.getElementById('contextBadgeText');
+  if (state.context) {
+    badge.style.display = 'block';
+    text.textContent = state.context;
+  } else {
+    badge.style.display = 'none';
+  }
+}
+
 renderDict();
 renderHistory();
 updateSave();
+updateContextBadge();
 debugLog('GENBA NOTE 初期化完了');
 debugLog('Speech API: ' + (state.speechSupported ? '対応' : '非対応'));
 debugLog('UA: ' + navigator.userAgent.substring(0, 80));
