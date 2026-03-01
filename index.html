@@ -144,7 +144,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
 .ai-row{display:flex;padding:10px 14px;border-bottom:1px solid var(--border);gap:10px}
 .ai-row:last-child{border-bottom:none}
 .ai-key{font-size:11px;font-weight:600;color:var(--primary);min-width:80px;flex-shrink:0;font-family:var(--fm);letter-spacing:.3px}
-.ai-val{font-size:13px;color:var(--text);line-height:1.5}
+.ai-val{font-size:13px;color:var(--text);line-height:1.6;white-space:pre-line}
 
 /* SAVE BAR */
 .save-bar{position:fixed;bottom:0;left:0;right:0;padding:16px;background:rgba(20,20,22,.94);backdrop-filter:blur(24px);border-top:1px solid var(--border);z-index:100}
@@ -261,6 +261,11 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
       <button class="type-btn" id="typeProcedure" onclick="setRecType('手順')">手順</button>
       <button class="type-btn" id="typeTrouble" onclick="setRecType('トラブル')">トラブル</button>
       <button class="type-btn" id="typeNote" onclick="setRecType('気づき')">気づき</button>
+    </div>
+    <!-- Procedure name (shown only when type=手順) -->
+    <div id="procNameRow" style="display:none;margin-bottom:14px">
+      <input class="setting-input" id="procNameInput" type="text" placeholder="手順名（例：砥石交換、メンテナンス、操作手順）" style="font-family:var(--fb);font-size:14px">
+      <div style="font-size:10px;color:var(--text-dim);margin-top:4px">同じ対象＋手順名でステップ番号が自動採番されます</div>
     </div>
 
     <!-- Photos -->
@@ -456,13 +461,13 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
 
 <script>
 // ===== STATE =====
-const MAX_PHOTOS = 5, CHUNK_SIZE = 5000;
+const MAX_PHOTOS = 5;
 let state = {
   photos:[], audioBlob:null, audioUrl:null, audioEl:null, stream:null,
   isRecording:false, seconds:0, transcript:'', interimTranscript:'',
   aiCorrected:'', aiStructured:null, aiStep1Done:false, aiStep2Done:false,
   records:[], dictionary:[], genbas:[], activeGenbaId:null,
-  apiKey:'', gasUrl:'', recType:'日常記録', mode:'voice',
+  apiKey:'', gasUrl:'', recType:'日常記録', procedureName:'', mode:'voice',
   debugMode:false, speechSupported:false, historyFilter:'',
   debugTapCount:0, debugTapTimer:null, modalRecordIdx:-1,
 };
@@ -525,7 +530,11 @@ function setRecType(type){
   const cls={'日常記録':'t-daily','手順':'t-proc','トラブル':'t-trouble','気づき':'t-note'};
   document.querySelectorAll('.type-btn').forEach(b=>b.className='type-btn');
   const btn=document.getElementById(map[type]); if(btn) btn.classList.add(cls[type]);
+  // 手順名入力欄の表示切替
+  document.getElementById('procNameRow').style.display=type==='手順'?'block':'none';
+  if(type!=='手順'){state.procedureName='';document.getElementById('procNameInput').value='';}
 }
+document.getElementById('procNameInput').addEventListener('input',e=>{state.procedureName=e.target.value.trim();});
 
 // PHOTO
 document.getElementById('fileInput').addEventListener('change',e=>{
@@ -672,7 +681,21 @@ async function runAIStep2(mode){
   if(id.pLbl) document.getElementById(id.pLbl).textContent='AI が構造化整理中...';
   const genba=getActiveGenba();
   const ctx=genba?`対象: ${genba.name}${genba.detail?'\n詳細: '+genba.detail:''}\n`:'';
-  const sys=`あなたは製造現場の記録を構造化するアシスタントです。\n${ctx}タスク: テキストを構造化整理。\n項目例: カテゴリ,作業内容,理由,設定値,結果,補足,改善案（内容に応じて選択）\n重要: 各値はフラットな文字列。入れ子禁止。\nJSON形式のみ（バッククォート不要）:\n{"structured":{"カテゴリ":"...","作業内容":"...",...}}`;
+  const sys=`あなたは製造現場の音声記録を整理するアシスタントです。
+${ctx}
+## タスク
+話者が実況的に喋った内容を、要点ごとにカテゴリ分けして整理する。
+
+## ルール
+- カテゴリ名は内容に応じて自由に決める（目的,理由,作業内容,手順,設定値,結果,問題点,対処,注意点,改善案,次回TODO,補足 など）
+- カテゴリの数は内容に応じて柔軟に増減する。要点が多ければ多く、少なければ少なく。
+- 各カテゴリの値には要点を「・」区切りで列挙する。要約しすぎず、発言のポイントを簡潔に並べる。
+- 話者が時系列バラバラに喋っていても、最適な論理順に並べ直す。
+- 言い直しや重複は統合し、言い間違いは正す。
+- 各値はフラットな文字列のみ。入れ子オブジェクト/配列は禁止。
+
+## 出力形式（JSON、バッククォート不要）
+{"structured":{"カテゴリ名1":"・ポイント1\\n・ポイント2","カテゴリ名2":"・ポイント1\\n・ポイント2",...}}`;
   try{
     const raw=await callAPI(sys,`テキスト:\n${text}`);
     document.getElementById(id.proc).classList.remove('visible');
@@ -691,18 +714,24 @@ async function runAIStep2(mode){
   }catch(err){document.getElementById(id.proc).classList.remove('visible');showToast('AI処理失敗: '+err.message,'error');}
 }
 
-// P4: API call with chunk splitting
+// API call: まず全文で送信、失敗時にリトライ
 async function callAPI(sys,content){
   const key=state.apiKey.trim();
-  if(content.length>CHUNK_SIZE){
-    debugLog('チャンク分割: '+content.length+'文字');
-    const chunks=[];for(let i=0;i<content.length;i+=CHUNK_SIZE) chunks.push(content.substring(i,i+CHUNK_SIZE));
-    const results=[];
-    for(let i=0;i<chunks.length;i++){debugLog(`チャンク${i+1}/${chunks.length}`);results.push(await apiCall(key,sys,`パート${i+1}/${chunks.length}:\n${chunks[i]}`));}
-    if(results.length>1) return await apiCall(key,'複数パートの処理結果を1つに統合。元のJSON形式を維持。',results.join('\n\n'));
-    return results[0];
+  // 1回目: 全文で送信
+  try{
+    return await apiCall(key,sys,content);
+  }catch(err){
+    debugLog('1回目失敗: '+err.message+' → リトライ');
+    // 長文の場合: テキストを前半だけ要約依頼してリトライ
+    if(content.length>8000){
+      debugLog('長文('+content.length+'文字)→ 圧縮してリトライ');
+      const trimmed=content.substring(0,8000)+'...\n（※長文のため一部省略）';
+      return await apiCall(key,sys,trimmed);
+    }
+    // 短文なら単純リトライ
+    await new Promise(r=>setTimeout(r,1000));
+    return await apiCall(key,sys,content);
   }
-  return await apiCall(key,sys,content);
 }
 async function apiCall(key,sys,content){
   const res=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json','x-api-key':key,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:4096,messages:[{role:'user',content:content}],system:sys})});
@@ -740,13 +769,14 @@ function saveRecord(){
   // P5
   if(text&&!state.aiCorrected&&!state.aiStructured){if(!confirm('AI処理を実行していません。このまま保存しますか？')) return;}
   const genba=getActiveGenba();
-  const rec={id:Date.now(),photos:[...state.photos],transcript:text,corrected:state.aiCorrected||text,structured:state.aiStructured,genbaId:state.activeGenbaId||null,context:genba?genba.name:'',contextDetail:genba?(genba.detail||''):'',recType:state.recType,timestamp:new Date().toISOString(),syncStatus:state.gasUrl?'pending':'na'};
+  const rec={id:Date.now(),photos:[...state.photos],transcript:text,corrected:state.aiCorrected||text,structured:state.aiStructured,genbaId:state.activeGenbaId||null,context:genba?genba.name:'',contextDetail:genba?(genba.detail||''):'',recType:state.recType,procedureName:state.procedureName||'',timestamp:new Date().toISOString(),syncStatus:state.gasUrl?'pending':'na'};
   state.records.unshift(rec);persistRecords();
   if(state.gasUrl) sendToSheet(rec);
   resetRecord();showToast('保存しました');
 }
 function resetRecord(){
   state.photos=[];renderPhotoGrid();deleteRec();state.seconds=0;
+  state.procedureName='';document.getElementById('procNameInput').value='';
   document.getElementById('recTimer').textContent='00:00';document.getElementById('manualText').value='';
   ['aiResultManual','aiProcessingManual'].forEach(x=>document.getElementById(x).classList.remove('visible'));
   document.getElementById('aiCorrectedTextManual').textContent='';document.getElementById('aiStructuredManual').innerHTML='';
@@ -799,7 +829,7 @@ function renderHistory(){
     const sm={'sent':'<span class="sync-badge sync-sent">送信済</span>','pending':'<span class="sync-badge sync-pending">未送信</span>','failed':'<span class="sync-badge sync-failed">失敗</span><button class="resend-btn" onclick="event.stopPropagation();resendRecord('+ri+')">再送</button>','na':''};
     let tags='';
     if(gn) tags+=`<span class="history-tag" style="background:var(--amber-dim);color:var(--amber);border-color:rgba(232,168,32,.15)">${escapeHtml(gn)}</span>`;
-    if(rec.recType&&rec.recType!=='日常記録'){const cm={'手順':'amber','トラブル':'red','気づき':'green'};const c=cm[rec.recType]||'primary';tags+=`<span class="history-tag" style="background:var(--${c}-dim);color:var(--${c})">${escapeHtml(rec.recType)}</span>`;}
+    if(rec.recType&&rec.recType!=='日常記録'){const cm={'手順':'amber','トラブル':'red','気づき':'green'};const c=cm[rec.recType]||'primary';tags+=`<span class="history-tag" style="background:var(--${c}-dim);color:var(--${c})">${escapeHtml(rec.recType)}${rec.procedureName?' / '+escapeHtml(rec.procedureName):''}</span>`;}
     item.innerHTML=`${thumb}<div class="history-body"><div class="history-text">${escapeHtml(text)}</div><div class="history-meta">${ds} ${sm[ss]||''}</div><div class="history-tags">${tags}</div></div>`;
     list.appendChild(item);
   });
@@ -815,7 +845,7 @@ function openModal(idx){
   const sEl=document.getElementById('modalStructured'),aEl=document.getElementById('modalAi');sEl.innerHTML='';
   if(rec.structured){aEl.style.display='block';for(const[k,v] of Object.entries(rec.structured)){const row=document.createElement('div');row.className='ai-row';row.innerHTML=`<div class="ai-key">${escapeHtml(k)}</div><div class="ai-val">${formatValue(v)}</div>`;sEl.appendChild(row);}}else aEl.style.display='none';
   const dt=new Date(rec.timestamp);let meta=dt.toLocaleDateString('ja-JP')+' '+dt.toLocaleTimeString('ja-JP',{hour:'2-digit',minute:'2-digit'});
-  if(rec.context) meta+='  |  '+rec.context; if(rec.recType) meta+='  |  '+rec.recType;
+  if(rec.context) meta+='  |  '+rec.context; if(rec.recType) meta+='  |  '+rec.recType; if(rec.procedureName) meta+=' / '+rec.procedureName;
   document.getElementById('modalMeta').textContent=meta;
   document.getElementById('modal').classList.add('open');document.body.style.overflow='hidden';
 }
@@ -837,7 +867,7 @@ function exportData(){const d={records:state.records,dictionary:state.dictionary
 async function sendToSheet(rec){
   if(!state.gasUrl) return;
   const genba=state.genbas.find(g=>g.id===rec.genbaId);
-  const payload={subject:genba?genba.name:'',subjectDetail:genba?(genba.detail||''):'',type:rec.recType||'日常記録',transcript:rec.transcript||'',corrected:rec.corrected||'',structured:rec.structured?JSON.stringify(rec.structured):'',photos:rec.photos||[]};
+  const payload={subject:genba?genba.name:'',subjectDetail:genba?(genba.detail||''):'',type:rec.recType||'日常記録',procedureName:rec.procedureName||'',transcript:rec.transcript||'',corrected:rec.corrected||'',structured:rec.structured?JSON.stringify(rec.structured):'',photos:rec.photos||[]};
   try{
     debugLog('シート送信中...');
     const res=await fetch(state.gasUrl,{method:'POST',headers:{'Content-Type':'text/plain'},body:JSON.stringify(payload)});
@@ -909,7 +939,7 @@ function cleanupVI(bid,tid){const b=document.getElementById(bid);if(b) b.classLi
 function showToast(msg,type='success'){const t=document.getElementById('toast');t.textContent=msg;t.className='toast toast-'+type+' show';setTimeout(()=>t.classList.remove('show'),2500);}
 function fmtTime(s){return String(Math.floor(s/60)).padStart(2,'0')+':'+String(s%60).padStart(2,'0');}
 function escapeHtml(t){const d=document.createElement('div');d.textContent=t;return d.innerHTML;}
-function formatValue(v){if(v==null) return '';if(typeof v==='object'){if(Array.isArray(v)) return v.map(formatValue).join(', ');return Object.entries(v).map(([k,v2])=>escapeHtml(k)+': '+formatValue(v2)).join(' / ');}return escapeHtml(String(v));}
+function formatValue(v){if(v==null) return '';if(typeof v==='object'){if(Array.isArray(v)) return v.map(formatValue).join(', ');return Object.entries(v).map(([k,v2])=>escapeHtml(k)+': '+formatValue(v2)).join(' / ');}return escapeHtml(String(v)).replace(/\n/g,'<br>');}
 
 // INIT
 renderDict();renderHistory();updateSave();renderGenbaSelector();
