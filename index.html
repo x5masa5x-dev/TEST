@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -100,47 +101,36 @@ body::before {
 @keyframes fadeIn { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
 
 /* Photo */
-.photo-capture {
-  position: relative; width: 100%; aspect-ratio: 16/10;
-  background: var(--surface); border-radius: var(--radius);
-  border: 1.5px solid var(--border); overflow: hidden;
-  cursor: pointer; transition: all 0.3s;
+.photo-grid {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px;
+  margin-bottom: 16px;
 }
-.photo-capture:hover { border-color: var(--border-light); }
-.photo-capture.has-photo { border-color: var(--cyan); }
-.photo-capture img { width:100%; height:100%; object-fit:cover; display:none; }
-.photo-capture.has-photo img { display: block; }
-.photo-empty {
-  position: absolute; inset: 0;
-  display: flex; flex-direction: column;
-  align-items: center; justify-content: center; gap: 10px;
+.photo-grid-item {
+  position: relative; aspect-ratio: 1;
+  border-radius: var(--radius-sm); overflow: hidden;
+  border: 1.5px solid var(--border); background: var(--surface);
 }
-.photo-capture.has-photo .photo-empty { display: none; }
-.photo-icon {
-  width: 52px; height: 52px; border-radius: 50%;
-  border: 2px solid var(--border-light);
+.photo-grid-item img {
+  width: 100%; height: 100%; object-fit: cover;
+}
+.photo-grid-remove {
+  position: absolute; top: 4px; right: 4px;
+  width: 22px; height: 22px; border-radius: 50%;
+  background: rgba(0,0,0,0.6); border: none;
+  color: #fff; font-size: 13px; cursor: pointer;
   display: flex; align-items: center; justify-content: center;
-  transition: all 0.3s;
 }
-.photo-capture:hover .photo-icon { border-color: var(--cyan); }
-.photo-icon svg { width: 22px; height: 22px; color: var(--text-dim); }
-.photo-empty span { font-size: 12px; color: var(--text-dim); letter-spacing: 1px; font-weight: 500; }
-.photo-badge {
-  position: absolute; top: 10px; left: 10px;
-  background: rgba(0,0,0,0.6); backdrop-filter: blur(8px);
-  padding: 4px 10px; border-radius: 6px;
-  font-family: 'IBM Plex Mono', monospace;
-  font-size: 10px; color: var(--cyan); display: none;
+.photo-add-btn {
+  aspect-ratio: 1; border-radius: var(--radius-sm);
+  border: 2px dashed var(--border); background: var(--surface);
+  cursor: pointer; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 4px;
+  transition: all 0.2s;
 }
-.photo-capture.has-photo .photo-badge { display: block; }
-.photo-remove-btn {
-  position: absolute; top: 10px; right: 10px;
-  width: 30px; height: 30px; border-radius: 50%;
-  background: rgba(0,0,0,0.6); backdrop-filter: blur(8px);
-  border: none; color: var(--text); font-size: 16px;
-  cursor: pointer; display: none; align-items: center; justify-content: center;
-}
-.photo-capture.has-photo .photo-remove-btn { display: flex; }
+.photo-add-btn:hover { border-color: var(--cyan); }
+.photo-add-btn svg { width: 22px; height: 22px; color: var(--text-dim); }
+.photo-add-btn span { font-size: 10px; color: var(--text-dim); font-weight: 600; }
+.photo-count { font-size: 11px; color: var(--text-dim); margin-bottom: 6px; font-weight: 600; }
 
 /* Recorder */
 .recorder {
@@ -645,21 +635,17 @@ body::before {
       <button class="mode-btn" id="typeNote" onclick="setRecType('気づき')">気づき</button>
     </div>
 
-    <div class="photo-capture" id="photoCapture" onclick="document.getElementById('fileInput').click()">
-      <input type="file" accept="image/*" capture="environment" id="fileInput" class="sr-only">
-      <img id="photoPreview" src="" alt="">
-      <div class="photo-empty">
-        <div class="photo-icon">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-            <path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/>
-            <circle cx="12" cy="13" r="4"/>
-          </svg>
-        </div>
-        <span>CAPTURE PHOTO</span>
+    <div id="photoCount" class="photo-count" style="display:none"></div>
+    <div class="photo-grid" id="photoGrid">
+      <div class="photo-add-btn" onclick="document.getElementById('fileInput').click()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/>
+          <circle cx="12" cy="13" r="4"/>
+        </svg>
+        <span>写真を追加</span>
       </div>
-      <div class="photo-badge">PHOTO ATTACHED</div>
-      <button class="photo-remove-btn" onclick="event.stopPropagation();removePhoto()">✕</button>
     </div>
+    <input type="file" accept="image/*" capture="environment" id="fileInput" class="sr-only">
 
     <!-- Input mode selector -->
     <div class="mode-selector" style="margin-top:16px">
@@ -842,7 +828,7 @@ body::before {
 <div class="modal-overlay" id="modal" onclick="closeModal()">
   <div class="modal-sheet" onclick="event.stopPropagation()">
     <div class="modal-handle"></div>
-    <img class="modal-photo" id="modalPhoto" style="display:none">
+    <div class="modal-photo" id="modalPhoto" style="display:none"></div>
     <div class="modal-text" id="modalText"></div>
     <div class="ai-result visible" id="modalAi" style="display:none">
       <div class="ai-result-header">
@@ -888,8 +874,9 @@ body::before {
 
 <script>
 // ===== STATE =====
+const MAX_PHOTOS = 5;
 let state = {
-  photo: null,
+  photos: [],
   audioBlob: null, audioUrl: null, audioEl: null,
   isRecording: false, seconds: 0,
   transcript: '', interimTranscript: '',
@@ -961,22 +948,55 @@ function setMode(mode) {
 document.getElementById('fileInput').addEventListener('change', e => {
   const file = e.target.files[0];
   if (!file) return;
+  if (state.photos.length >= MAX_PHOTOS) {
+    showToast(`写真は${MAX_PHOTOS}枚までです`, 'error');
+    return;
+  }
   const reader = new FileReader();
   reader.onload = ev => {
-    state.photo = ev.target.result;
-    document.getElementById('photoPreview').src = state.photo;
-    document.getElementById('photoCapture').classList.add('has-photo');
+    state.photos.push(ev.target.result);
+    renderPhotoGrid();
     updateSave();
   };
   reader.readAsDataURL(file);
+  e.target.value = ''; // Reset so same file can be selected again
 });
 
-function removePhoto() {
-  state.photo = null;
-  document.getElementById('photoPreview').src = '';
-  document.getElementById('photoCapture').classList.remove('has-photo');
-  document.getElementById('fileInput').value = '';
+function removePhoto(index) {
+  state.photos.splice(index, 1);
+  renderPhotoGrid();
   updateSave();
+}
+
+function renderPhotoGrid() {
+  const grid = document.getElementById('photoGrid');
+  const count = document.getElementById('photoCount');
+  grid.innerHTML = '';
+
+  // Render existing photos
+  state.photos.forEach((photo, i) => {
+    const item = document.createElement('div');
+    item.className = 'photo-grid-item';
+    item.innerHTML = `<img src="${photo}" alt="写真${i+1}"><button class="photo-grid-remove" onclick="event.stopPropagation();removePhoto(${i})">✕</button>`;
+    grid.appendChild(item);
+  });
+
+  // Add button (if under limit)
+  if (state.photos.length < MAX_PHOTOS) {
+    const addBtn = document.createElement('div');
+    addBtn.className = 'photo-add-btn';
+    addBtn.onclick = () => document.getElementById('fileInput').click();
+    addBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg><span>写真を追加</span>`;
+    grid.appendChild(addBtn);
+  }
+
+  // Counter
+  if (state.photos.length > 0) {
+    count.textContent = `写真: ${state.photos.length} / ${MAX_PHOTOS}`;
+    count.style.display = 'block';
+  } else {
+    count.style.display = 'none';
+  }
 }
 
 // ===== RECORDING =====
@@ -1358,7 +1378,8 @@ function saveRecord() {
   const genba = getActiveGenba();
   const rec = {
     id: Date.now(),
-    photo: state.photo,
+    photos: state.photos.length > 0 ? [...state.photos] : [],
+    photo: state.photos[0] || null, // backward compat
     transcript: text,
     corrected: state.aiCorrected || text,
     structured: state.aiStructured,
@@ -1380,7 +1401,8 @@ function saveRecord() {
 }
 
 function resetRecord() {
-  removePhoto();
+  state.photos = [];
+  renderPhotoGrid();
   deleteRec();
   state.seconds = 0;
   state.aiCorrected = '';
@@ -1396,16 +1418,18 @@ function resetRecord() {
 
 function persistRecords() {
   const slim = state.records.slice(0, 100).map(r => ({
-    ...r, photo: r.photo ? r.photo.substring(0, 200000) : null
+    ...r,
+    photos: (r.photos || []).map(p => p ? p.substring(0, 200000) : null),
+    photo: r.photo ? r.photo.substring(0, 200000) : null
   }));
   try { localStorage.setItem('gn_records', JSON.stringify(slim)); } catch(e) {
-    slim.forEach((r, i) => { if (i > 10) r.photo = null; });
+    slim.forEach((r, i) => { if (i > 10) { r.photo = null; r.photos = []; } });
     try { localStorage.setItem('gn_records', JSON.stringify(slim)); } catch(e2) {}
   }
 }
 
 function updateSave() {
-  let has = !!state.photo;
+  let has = state.photos.length > 0;
   if (state.mode === 'voice') {
     has = has || !!state.audioBlob || !!(document.getElementById('transcriptEditArea')?.value?.trim());
   } else {
@@ -1487,8 +1511,9 @@ function renderHistory() {
     item.onclick = () => openModal(realIdx);
     const dt = new Date(rec.timestamp);
     const ds = `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')} ${String(dt.getHours()).padStart(2,'0')}:${String(dt.getMinutes()).padStart(2,'0')}`;
-    const thumb = rec.photo
-      ? `<img class="history-thumb" src="${rec.photo}">`
+    const photos = rec.photos || (rec.photo ? [rec.photo] : []);
+    const thumb = photos.length > 0
+      ? `<img class="history-thumb" src="${photos[0]}">${photos.length > 1 ? `<span style="position:absolute;bottom:2px;right:2px;background:rgba(0,0,0,0.6);color:#fff;font-size:10px;padding:1px 5px;border-radius:4px">+${photos.length-1}</span>` : ''}`
       : `<div class="history-thumb-empty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0014 0"/></svg></div>`;
     const text = rec.corrected || rec.transcript || '（メモなし）';
     const genbaName = genbaMap[rec.genbaId] || rec.context || '';
@@ -1505,8 +1530,14 @@ function renderHistory() {
 function openModal(idx) {
   const rec = state.records[idx];
   const photo = document.getElementById('modalPhoto');
-  if (rec.photo) { photo.src = rec.photo; photo.style.display = 'block'; }
-  else photo.style.display = 'none';
+  const photos = rec.photos || (rec.photo ? [rec.photo] : []);
+  if (photos.length > 0) {
+    photo.innerHTML = photos.map((p, i) => `<img src="${p}" style="width:100%;border-radius:8px;margin-bottom:8px" alt="写真${i+1}">`).join('');
+    photo.style.display = 'block';
+  } else {
+    photo.innerHTML = '';
+    photo.style.display = 'none';
+  }
   document.getElementById('modalText').textContent = rec.corrected || rec.transcript || '';
   const sEl = document.getElementById('modalStructured');
   const aiEl = document.getElementById('modalAi');
@@ -1649,7 +1680,8 @@ async function sendToSheet(record) {
     transcript: record.transcript || '',
     corrected: record.corrected || '',
     structured: record.structured ? JSON.stringify(record.structured) : '',
-    photo: record.photo || '',
+    photo: record.photos ? record.photos[0] || '' : (record.photo || ''),
+    photos: record.photos || (record.photo ? [record.photo] : []),
   };
 
   try {
