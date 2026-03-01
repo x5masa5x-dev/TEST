@@ -217,6 +217,33 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
 .modal-close{width:100%;padding:14px;border-radius:10px;border:1px solid var(--border);background:none;color:var(--text);font-family:var(--fb);font-size:14px;cursor:pointer}
 .modal-delete{width:100%;padding:14px;border-radius:10px;border:1px solid var(--red);background:var(--red-dim);color:var(--red);font-family:var(--fb);font-size:14px;cursor:pointer;margin-top:8px}
 .sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0)}
+
+/* SEARCH */
+.search-bar{display:flex;gap:8px;margin-bottom:14px}
+.search-input{flex:1;padding:10px 14px;border-radius:var(--radius-sm);border:1.5px solid var(--border);background:var(--bg2);color:var(--text);font-family:var(--fb);font-size:14px;outline:none}
+.search-input:focus{border-color:var(--primary)}
+.search-go-btn{padding:10px 18px;border-radius:var(--radius-sm);border:1.5px solid var(--primary);background:var(--primary-dim);color:var(--primary);font-family:var(--fb);font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap}
+.search-filters{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap}
+.search-filter-select{padding:8px 12px;border-radius:8px;border:1.5px solid var(--border);background:var(--bg2);color:var(--text);font-family:var(--fb);font-size:13px;outline:none;flex:1;min-width:0}
+.search-filter-select:focus{border-color:var(--primary)}
+.search-result-item{background:var(--surface);border-radius:var(--radius-sm);border:1px solid var(--border);padding:14px;margin-bottom:10px;cursor:pointer;transition:all .2s}
+.search-result-item:active{background:var(--surface2)}
+.search-result-text{font-size:13px;line-height:1.5;color:var(--text);display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.search-result-meta{font-family:var(--fm);font-size:10px;color:var(--text-dim);margin-top:6px;display:flex;gap:6px;flex-wrap:wrap}
+.search-empty{text-align:center;padding:40px 20px;color:var(--text-dim);font-size:13px}
+.search-loading{text-align:center;padding:30px;color:var(--text-dim);font-size:12px}
+
+/* REPORT GENERATE */
+.report-section{background:var(--surface);border-radius:var(--radius);border:1px solid var(--border);padding:16px;margin-top:16px}
+.report-title{font-family:var(--fh);font-size:12px;font-weight:600;color:var(--primary);letter-spacing:1px;margin-bottom:12px}
+.report-row{display:flex;gap:8px;margin-bottom:10px;align-items:center}
+.report-label{font-size:12px;font-weight:500;color:var(--text-dim);min-width:60px;flex-shrink:0}
+.report-btn{width:100%;padding:14px;border-radius:10px;border:none;background:var(--primary);color:#fff;font-family:var(--fb);font-size:14px;font-weight:700;cursor:pointer;transition:all .25s;margin-top:10px}
+.report-btn:hover{filter:brightness(1.1)}
+.report-btn:disabled{background:var(--surface2);color:var(--text-dim);cursor:not-allowed;filter:none}
+.report-result{margin-top:14px;padding:14px;background:var(--bg2);border-radius:var(--radius-sm);border:1px solid var(--border)}
+.report-result a{color:var(--primary);text-decoration:none;font-weight:600;display:inline-flex;align-items:center;gap:6px}
+.report-result a:hover{text-decoration:underline}
 .voice-input-btn{width:44px;height:44px;border-radius:10px;border:1.5px solid var(--border);background:var(--surface);color:var(--text-dim);cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all .25s}
 .voice-input-btn:hover{border-color:var(--primary);color:var(--primary)}
 .voice-input-btn.listening{border-color:var(--red);color:var(--red);background:var(--red-dim);animation:pulse-ring 1.8s ease-in-out infinite}
@@ -235,6 +262,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
     <div class="nav-tabs">
       <button class="nav-tab active" data-page="record">記録</button>
       <button class="nav-tab" data-page="history">履歴</button>
+      <button class="nav-tab" data-page="search">検索</button>
       <button class="nav-tab" data-page="settings">設定</button>
     </div>
   </div>
@@ -364,6 +392,55 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
       <div class="stat-card"><div class="stat-num" id="statPhotos">0</div><div class="stat-label">PHOTOS</div></div>
     </div>
     <div id="historyList"></div>
+  </div>
+
+  <!-- SEARCH PAGE -->
+  <div class="page" id="page-search">
+    <div class="search-bar">
+      <input class="search-input" id="searchKeyword" type="text" placeholder="キーワード検索..." onkeydown="if(event.key==='Enter')runSearch()">
+      <button class="search-go-btn" onclick="runSearch()">検索</button>
+    </div>
+    <div class="search-filters">
+      <select class="search-filter-select" id="searchSubject"><option value="">対象: すべて</option></select>
+      <select class="search-filter-select" id="searchType">
+        <option value="">タイプ: すべて</option>
+        <option value="日常記録">日常記録</option>
+        <option value="手順">手順</option>
+        <option value="トラブル">トラブル</option>
+        <option value="気づき">気づき</option>
+      </select>
+      <select class="search-filter-select" id="searchProcName"><option value="">手順名: すべて</option></select>
+    </div>
+    <div id="searchResults"><div class="search-empty">GAS URLを設定してからスプレッドシートを検索できます</div></div>
+
+    <!-- Report Generation -->
+    <div class="report-section">
+      <div class="report-title">📄 レポート生成</div>
+      <div class="report-row">
+        <div class="report-label">対象</div>
+        <select class="search-filter-select" id="reportSubject"><option value="">すべて</option></select>
+      </div>
+      <div class="report-row">
+        <div class="report-label">タイプ</div>
+        <select class="search-filter-select" id="reportType">
+          <option value="">すべて</option>
+          <option value="日常記録">日常記録</option>
+          <option value="手順">手順</option>
+          <option value="トラブル">トラブル</option>
+          <option value="気づき">気づき</option>
+        </select>
+      </div>
+      <div class="report-row">
+        <div class="report-label">手順名</div>
+        <select class="search-filter-select" id="reportProcName"><option value="">すべて</option></select>
+      </div>
+      <div class="report-row">
+        <div class="report-label">タイトル</div>
+        <input class="search-input" id="reportTitle" type="text" placeholder="自動生成（対象名+レポート）" style="flex:1">
+      </div>
+      <button class="report-btn" id="reportBtn" onclick="generateReport()">Google Docs + PDF を生成</button>
+      <div id="reportResult" style="display:none"></div>
+    </div>
   </div>
 
   <!-- SETTINGS PAGE -->
@@ -510,6 +587,7 @@ document.querySelectorAll('.nav-tab').forEach(tab=>{
     document.getElementById('saveBar').style.display=tab.dataset.page==='record'?'block':'none';
     if(tab.dataset.page==='history') renderHistory();
     if(tab.dataset.page==='settings'){loadSettings();renderDict();}
+    if(tab.dataset.page==='search') initSearchPage();
   });
 });
 
@@ -787,6 +865,23 @@ function persistRecords(){
   const slim=state.records.slice(0,100).map(r=>({...r,photos:(r.photos||[]).map(p=>p?p.substring(0,200000):null)}));
   try{localStorage.setItem('gr_records',JSON.stringify(slim));}catch(e){slim.forEach((r,i)=>{if(i>10) r.photos=[];});try{localStorage.setItem('gr_records',JSON.stringify(slim));}catch(e2){}}
 }
+// v10: 送信済みローカルデータの自動クリーンアップ
+// 送信済み(sent)で3日以上経過した記録の写真データを削除してストレージ節約
+// テキストデータは残す（履歴として閲覧可能）
+function autoCleanup(){
+  const threshold=3*24*60*60*1000; // 3日
+  const now=Date.now();
+  let cleaned=0;
+  state.records.forEach(r=>{
+    if(r.syncStatus==='sent'&&r.photos&&r.photos.length>0){
+      const age=now-new Date(r.timestamp).getTime();
+      if(age>threshold){r.photos=[];cleaned++;}
+    }
+  });
+  if(cleaned>0){persistRecords();debugLog('自動クリーンアップ: '+cleaned+'件の写真データを削除');}
+}
+// 起動時とシート送信成功時に実行
+setTimeout(autoCleanup,3000);
 function updateSave(){
   if(state.isRecording){document.getElementById('saveBtn').disabled=true;return;}
   let has=state.photos.length>0;
@@ -847,6 +942,7 @@ function openModal(idx){
   const dt=new Date(rec.timestamp);let meta=dt.toLocaleDateString('ja-JP')+' '+dt.toLocaleTimeString('ja-JP',{hour:'2-digit',minute:'2-digit'});
   if(rec.context) meta+='  |  '+rec.context; if(rec.recType) meta+='  |  '+rec.recType; if(rec.procedureName) meta+=' / '+rec.procedureName;
   document.getElementById('modalMeta').textContent=meta;
+  document.querySelector('.modal-delete').style.display='block';
   document.getElementById('modal').classList.add('open');document.body.style.overflow='hidden';
 }
 function closeModal(){document.getElementById('modal').classList.remove('open');document.body.style.overflow='';}
@@ -873,7 +969,7 @@ async function sendToSheet(rec){
     const res=await fetch(state.gasUrl,{method:'POST',headers:{'Content-Type':'text/plain'},body:JSON.stringify(payload)});
     const result=await res.json().catch(()=>({success:true}));
     debugLog('送信結果: '+JSON.stringify(result));
-    if(result.success!==false){rec.syncStatus='sent';persistRecords();showToast('スプレッドシートに送信しました');}
+    if(result.success!==false){rec.syncStatus='sent';persistRecords();autoCleanup();showToast('スプレッドシートに送信しました');}
     else{rec.syncStatus='failed';persistRecords();showToast('シート送信エラー','error');}
   }catch(err){debugLog('送信エラー: '+err.message);rec.syncStatus='failed';persistRecords();showToast('シート送信に失敗（ローカルには保存済み）','error');}
 }
@@ -941,9 +1037,185 @@ function fmtTime(s){return String(Math.floor(s/60)).padStart(2,'0')+':'+String(s
 function escapeHtml(t){const d=document.createElement('div');d.textContent=t;return d.innerHTML;}
 function formatValue(v){if(v==null) return '';if(typeof v==='object'){if(Array.isArray(v)) return v.map(formatValue).join(', ');return Object.entries(v).map(([k,v2])=>escapeHtml(k)+': '+formatValue(v2)).join(' / ');}return escapeHtml(String(v)).replace(/\n/g,'<br>');}
 
+// ===== v10: SEARCH API =====
+let searchCache={subjects:[],types:[],procedureNames:[],loaded:false};
+
+async function gasGet(params){
+  if(!state.gasUrl){showToast('GAS URLを設定してください','error');throw new Error('No GAS URL');}
+  const url=new URL(state.gasUrl);
+  for(const[k,v] of Object.entries(params)) url.searchParams.set(k,v);
+  debugLog('GET: '+url.toString().substring(0,120));
+  const res=await fetch(url.toString());
+  const data=await res.json();
+  debugLog('GET結果: '+JSON.stringify(data).substring(0,150));
+  if(!data.success) throw new Error(data.message||'GAS Error');
+  return data;
+}
+
+async function initSearchPage(){
+  if(!state.gasUrl){
+    document.getElementById('searchResults').innerHTML='<div class="search-empty">設定タブでGAS URLを入力してください</div>';
+    return;
+  }
+  if(!searchCache.loaded){
+    try{
+      document.getElementById('searchResults').innerHTML='<div class="search-loading">データ取得中...</div>';
+      const data=await gasGet({action:'search',limit:'1'});
+      searchCache.subjects=data.subjects||[];
+      searchCache.types=data.types||[];
+      searchCache.procedureNames=data.procedureNames||[];
+      searchCache.loaded=true;
+      populateSearchFilters();
+      document.getElementById('searchResults').innerHTML='<div class="search-empty">キーワードやフィルターで検索してください<br>'+data.total+'件のレコードがあります</div>';
+    }catch(err){
+      document.getElementById('searchResults').innerHTML='<div class="search-empty">データ取得に失敗: '+escapeHtml(err.message)+'</div>';
+    }
+  }
+}
+
+function populateSearchFilters(){
+  // 検索フィルター
+  const ss=document.getElementById('searchSubject');
+  ss.innerHTML='<option value="">対象: すべて</option>';
+  searchCache.subjects.forEach(s=>{const o=document.createElement('option');o.value=s;o.textContent=s;ss.appendChild(o);});
+  const sp=document.getElementById('searchProcName');
+  sp.innerHTML='<option value="">手順名: すべて</option>';
+  searchCache.procedureNames.forEach(p=>{const o=document.createElement('option');o.value=p;o.textContent=p;sp.appendChild(o);});
+  // レポートフィルター
+  const rs=document.getElementById('reportSubject');
+  rs.innerHTML='<option value="">すべて</option>';
+  searchCache.subjects.forEach(s=>{const o=document.createElement('option');o.value=s;o.textContent=s;rs.appendChild(o);});
+  const rp=document.getElementById('reportProcName');
+  rp.innerHTML='<option value="">すべて</option>';
+  searchCache.procedureNames.forEach(p=>{const o=document.createElement('option');o.value=p;o.textContent=p;rp.appendChild(o);});
+}
+
+async function runSearch(){
+  if(!state.gasUrl){showToast('GAS URLを設定','error');return;}
+  const params={action:'search',limit:'50'};
+  const kw=document.getElementById('searchKeyword').value.trim();
+  const subj=document.getElementById('searchSubject').value;
+  const type=document.getElementById('searchType').value;
+  const proc=document.getElementById('searchProcName').value;
+  if(kw) params.keyword=kw;
+  if(subj) params.subject=subj;
+  if(type) params.type=type;
+  if(proc) params.procedureName=proc;
+  
+  const el=document.getElementById('searchResults');
+  el.innerHTML='<div class="search-loading">検索中...</div>';
+  try{
+    const data=await gasGet(params);
+    if(!searchCache.loaded){
+      searchCache.subjects=data.subjects||[];searchCache.procedureNames=data.procedureNames||[];searchCache.loaded=true;
+      populateSearchFilters();
+    }
+    if(data.records.length===0){el.innerHTML='<div class="search-empty">該当する記録がありません</div>';return;}
+    el.innerHTML='<div style="font-size:11px;color:var(--text-dim);margin-bottom:10px;font-weight:600">'+data.count+'件 / '+data.total+'件中</div>';
+    data.records.forEach(rec=>{
+      const item=document.createElement('div');item.className='search-result-item';
+      const text=rec['AI修正テキスト']||rec['元テキスト']||'（メモなし）';
+      const dt=rec['日時']||'';
+      const subj=rec['対象']||'';
+      const type=rec['タイプ']||'';
+      const proc=rec['手順名']||'';
+      const step=rec['ステップ番号']||'';
+      let meta=dt;
+      if(subj) meta+=' | '+subj;
+      if(type) meta+=' | '+type;
+      if(proc) meta+=' | '+proc;
+      if(step) meta+=' Step'+step;
+      
+      // 構造化データがあれば表示
+      let structHtml='';
+      if(rec['AI構造化']){
+        try{
+          const parsed=JSON.parse(rec['AI構造化']);
+          structHtml='<div style="margin-top:8px;font-size:11px;color:var(--text-mid)">';
+          for(const[k,v] of Object.entries(parsed)){
+            structHtml+='<span style="color:var(--primary);font-weight:600">'+escapeHtml(k)+'</span>: '+escapeHtml(String(v||'')).substring(0,60)+'<br>';
+          }
+          structHtml+='</div>';
+        }catch(e){}
+      }
+      
+      item.innerHTML='<div class="search-result-text">'+escapeHtml(text)+'</div>'+structHtml+'<div class="search-result-meta">'+escapeHtml(meta)+'</div>';
+      
+      // クリックで詳細モーダル
+      item.onclick=()=>{openSearchModal(rec);};
+      el.appendChild(item);
+    });
+  }catch(err){el.innerHTML='<div class="search-empty">検索エラー: '+escapeHtml(err.message)+'</div>';}
+}
+
+function openSearchModal(rec){
+  const text=rec['AI修正テキスト']||rec['元テキスト']||'';
+  document.getElementById('modalText').textContent=text;
+  const sEl=document.getElementById('modalStructured'),aEl=document.getElementById('modalAi');
+  sEl.innerHTML='';
+  if(rec['AI構造化']){
+    try{
+      const parsed=JSON.parse(rec['AI構造化']);
+      aEl.style.display='block';
+      for(const[k,v] of Object.entries(parsed)){const row=document.createElement('div');row.className='ai-row';row.innerHTML='<div class="ai-key">'+escapeHtml(k)+'</div><div class="ai-val">'+formatValue(v)+'</div>';sEl.appendChild(row);}
+    }catch(e){aEl.style.display='none';}
+  }else aEl.style.display='none';
+  // 写真
+  const ph=document.getElementById('modalPhotos');
+  const photos=[rec['写真URL1'],rec['写真URL2'],rec['写真URL3'],rec['写真URL4'],rec['写真URL5']].filter(Boolean);
+  if(photos.length>0){
+    ph.innerHTML=photos.map(u=>'<a href="'+escapeHtml(u)+'" target="_blank" style="display:block;margin-bottom:8px;color:var(--primary);font-size:12px">📷 写真を開く</a>').join('');
+    ph.style.display='block';
+  }else{ph.innerHTML='';ph.style.display='none';}
+  let meta=rec['日時']||'';
+  if(rec['対象']) meta+='  |  '+rec['対象'];
+  if(rec['タイプ']) meta+='  |  '+rec['タイプ'];
+  if(rec['手順名']) meta+='  |  '+rec['手順名'];
+  if(rec['ステップ番号']) meta+=' Step'+rec['ステップ番号'];
+  document.getElementById('modalMeta').textContent=meta;
+  state.modalRecordIdx=-1; // 検索結果からの表示なのでローカル削除は無効
+  document.querySelector('.modal-delete').style.display='none';
+  document.getElementById('modal').classList.add('open');document.body.style.overflow='hidden';
+}
+
+// ===== v10: REPORT GENERATION =====
+async function generateReport(){
+  if(!state.gasUrl){showToast('GAS URLを設定','error');return;}
+  const btn=document.getElementById('reportBtn');
+  const resEl=document.getElementById('reportResult');
+  btn.disabled=true;btn.textContent='生成中...';resEl.style.display='none';
+  
+  const params={action:'generate_doc'};
+  const subj=document.getElementById('reportSubject').value;
+  const type=document.getElementById('reportType').value;
+  const proc=document.getElementById('reportProcName').value;
+  const title=document.getElementById('reportTitle').value.trim();
+  if(subj) params.subject=subj;
+  if(type) params.type=type;
+  if(proc) params.procedureName=proc;
+  if(title) params.title=title;
+  
+  try{
+    const data=await gasGet(params);
+    resEl.innerHTML='<div class="report-result">'+
+      '<div style="font-size:13px;font-weight:600;margin-bottom:10px">✅ 生成完了（'+data.recordCount+'件）</div>'+
+      '<div style="margin-bottom:8px"><a href="'+escapeHtml(data.docUrl)+'" target="_blank">📄 Google Docs を開く</a></div>'+
+      '<div><a href="'+escapeHtml(data.pdfUrl)+'" target="_blank">📕 PDF をダウンロード</a></div>'+
+      '</div>';
+    resEl.style.display='block';
+    showToast('レポート生成完了！');
+  }catch(err){
+    resEl.innerHTML='<div class="report-result" style="color:var(--red)">❌ '+escapeHtml(err.message)+'</div>';
+    resEl.style.display='block';
+    showToast('生成失敗: '+err.message,'error');
+  }finally{
+    btn.disabled=false;btn.textContent='Google Docs + PDF を生成';
+  }
+}
+
 // INIT
 renderDict();renderHistory();updateSave();renderGenbaSelector();
-debugLog('GENBA REC v9.0 初期化完了');
+debugLog('GENBA REC v10.0 初期化完了');
 debugLog('Speech: '+(state.speechSupported?'対応':'非対応'));
 </script>
 </body>
