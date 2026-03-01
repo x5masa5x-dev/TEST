@@ -226,8 +226,12 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
 .search-filters{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap}
 .search-filter-select{padding:8px 12px;border-radius:8px;border:1.5px solid var(--border);background:var(--bg2);color:var(--text);font-family:var(--fb);font-size:13px;outline:none;flex:1;min-width:0}
 .search-filter-select:focus{border-color:var(--primary)}
-.search-result-item{background:var(--surface);border-radius:var(--radius-sm);border:1px solid var(--border);padding:14px;margin-bottom:10px;cursor:pointer;transition:all .2s}
+.search-result-item{background:var(--surface);border-radius:var(--radius-sm);border:1px solid var(--border);padding:14px;margin-bottom:10px;cursor:pointer;transition:all .2s;display:flex;gap:12px;align-items:flex-start}
 .search-result-item:active{background:var(--surface2)}
+.search-result-item.selected{border-color:var(--primary);background:var(--primary-dim)}
+.search-result-check{width:20px;height:20px;border-radius:6px;border:2px solid var(--border);background:var(--bg2);flex-shrink:0;display:flex;align-items:center;justify-content:center;margin-top:2px;transition:all .2s}
+.search-result-item.selected .search-result-check{border-color:var(--primary);background:var(--primary);color:#fff}
+.search-result-body{flex:1;min-width:0}
 .search-result-text{font-size:13px;line-height:1.5;color:var(--text);display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
 .search-result-meta{font-family:var(--fm);font-size:10px;color:var(--text-dim);margin-top:6px;display:flex;gap:6px;flex-wrap:wrap}
 .search-empty{text-align:center;padding:40px 20px;color:var(--text-dim);font-size:13px}
@@ -236,7 +240,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
 /* REPORT GENERATE */
 .report-section{background:var(--surface);border-radius:var(--radius);border:1px solid var(--border);padding:16px;margin-top:16px}
 .report-title{font-family:var(--fh);font-size:12px;font-weight:600;color:var(--primary);letter-spacing:1px;margin-bottom:12px}
-.report-row{display:flex;gap:8px;margin-bottom:10px;align-items:center}
+.report-row{display:flex;gap:8px;margin-bottom:10px;align-items:center;overflow:hidden}
 .report-label{font-size:12px;font-weight:500;color:var(--text-dim);min-width:60px;flex-shrink:0}
 .report-btn{width:100%;padding:14px;border-radius:10px;border:none;background:var(--primary);color:#fff;font-family:var(--fb);font-size:14px;font-weight:700;cursor:pointer;transition:all .25s;margin-top:10px}
 .report-btn:hover{filter:brightness(1.1)}
@@ -416,27 +420,11 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
     <!-- Report Generation -->
     <div class="report-section">
       <div class="report-title">📄 レポート生成</div>
-      <div class="report-row">
-        <div class="report-label">対象</div>
-        <select class="search-filter-select" id="reportSubject"><option value="">すべて</option></select>
-      </div>
-      <div class="report-row">
-        <div class="report-label">タイプ</div>
-        <select class="search-filter-select" id="reportType">
-          <option value="">すべて</option>
-          <option value="日常記録">日常記録</option>
-          <option value="手順">手順</option>
-          <option value="トラブル">トラブル</option>
-          <option value="気づき">気づき</option>
-        </select>
-      </div>
-      <div class="report-row">
-        <div class="report-label">手順名</div>
-        <select class="search-filter-select" id="reportProcName"><option value="">すべて</option></select>
-      </div>
+      <div style="font-size:12px;color:var(--text-dim);margin-bottom:12px;line-height:1.5">上の検索結果からレポートに含めるレコードを選択してください。未選択の場合はフィルタ条件に一致する全件が対象になります。</div>
+      <div id="reportSelectedCount" style="font-size:12px;font-weight:600;color:var(--primary);margin-bottom:10px;display:none"></div>
       <div class="report-row">
         <div class="report-label">タイトル</div>
-        <input class="search-input" id="reportTitle" type="text" placeholder="自動生成（対象名+レポート）" style="flex:1">
+        <input class="search-input" id="reportTitle" type="text" placeholder="自動生成（対象名+レポート）" style="min-width:0">
       </div>
       <button class="report-btn" id="reportBtn" onclick="generateReport()">Google Docs + PDF を生成</button>
       <div id="reportResult" style="display:none"></div>
@@ -1039,6 +1027,7 @@ function formatValue(v){if(v==null) return '';if(typeof v==='object'){if(Array.i
 
 // ===== v10: SEARCH API =====
 let searchCache={subjects:[],types:[],procedureNames:[],loaded:false};
+let searchSelectedRows=[]; // 選択されたレコードの行番号
 
 async function gasGet(params){
   if(!state.gasUrl){showToast('GAS URLを設定してください','error');throw new Error('No GAS URL');}
@@ -1074,20 +1063,12 @@ async function initSearchPage(){
 }
 
 function populateSearchFilters(){
-  // 検索フィルター
   const ss=document.getElementById('searchSubject');
   ss.innerHTML='<option value="">対象: すべて</option>';
   searchCache.subjects.forEach(s=>{const o=document.createElement('option');o.value=s;o.textContent=s;ss.appendChild(o);});
   const sp=document.getElementById('searchProcName');
   sp.innerHTML='<option value="">手順名: すべて</option>';
   searchCache.procedureNames.forEach(p=>{const o=document.createElement('option');o.value=p;o.textContent=p;sp.appendChild(o);});
-  // レポートフィルター
-  const rs=document.getElementById('reportSubject');
-  rs.innerHTML='<option value="">すべて</option>';
-  searchCache.subjects.forEach(s=>{const o=document.createElement('option');o.value=s;o.textContent=s;rs.appendChild(o);});
-  const rp=document.getElementById('reportProcName');
-  rp.innerHTML='<option value="">すべて</option>';
-  searchCache.procedureNames.forEach(p=>{const o=document.createElement('option');o.value=p;o.textContent=p;rp.appendChild(o);});
 }
 
 async function runSearch(){
@@ -1102,6 +1083,8 @@ async function runSearch(){
   if(type) params.type=type;
   if(proc) params.procedureName=proc;
   
+  searchSelectedRows=[];
+  updateSelectedCount();
   const el=document.getElementById('searchResults');
   el.innerHTML='<div class="search-loading">検索中...</div>';
   try{
@@ -1111,9 +1094,12 @@ async function runSearch(){
       populateSearchFilters();
     }
     if(data.records.length===0){el.innerHTML='<div class="search-empty">該当する記録がありません</div>';return;}
-    el.innerHTML='<div style="font-size:11px;color:var(--text-dim);margin-bottom:10px;font-weight:600">'+data.count+'件 / '+data.total+'件中</div>';
+    el.innerHTML='<div style="font-size:11px;color:var(--text-dim);margin-bottom:6px;font-weight:600">'+data.count+'件 / '+data.total+'件中</div>'+
+      '<div style="display:flex;gap:8px;margin-bottom:10px"><button class="search-go-btn" style="font-size:10px;padding:6px 12px" onclick="selectAllSearch()">全選択</button><button class="search-go-btn" style="font-size:10px;padding:6px 12px;border-color:var(--border);color:var(--text-dim)" onclick="deselectAllSearch()">全解除</button></div>';
     data.records.forEach(rec=>{
       const item=document.createElement('div');item.className='search-result-item';
+      const rowNum=rec._row;
+      item.dataset.row=rowNum;
       const text=rec['AI修正テキスト']||rec['元テキスト']||'（メモなし）';
       const dt=rec['日時']||'';
       const subj=rec['対象']||'';
@@ -1126,7 +1112,6 @@ async function runSearch(){
       if(proc) meta+=' | '+proc;
       if(step) meta+=' Step'+step;
       
-      // 構造化データがあれば表示
       let structHtml='';
       if(rec['AI構造化']){
         try{
@@ -1139,13 +1124,43 @@ async function runSearch(){
         }catch(e){}
       }
       
-      item.innerHTML='<div class="search-result-text">'+escapeHtml(text)+'</div>'+structHtml+'<div class="search-result-meta">'+escapeHtml(meta)+'</div>';
+      item.innerHTML='<div class="search-result-check" data-row="'+rowNum+'">✓</div><div class="search-result-body"><div class="search-result-text">'+escapeHtml(text)+'</div>'+structHtml+'<div class="search-result-meta">'+escapeHtml(meta)+'</div></div>';
       
-      // クリックで詳細モーダル
-      item.onclick=()=>{openSearchModal(rec);};
+      // チェックボックスクリックで選択切替
+      item.onclick=(e)=>{
+        e.preventDefault();
+        item.classList.toggle('selected');
+        if(item.classList.contains('selected')){
+          if(!searchSelectedRows.includes(rowNum)) searchSelectedRows.push(rowNum);
+        }else{
+          searchSelectedRows=searchSelectedRows.filter(r=>r!==rowNum);
+        }
+        updateSelectedCount();
+      };
+      
       el.appendChild(item);
     });
   }catch(err){el.innerHTML='<div class="search-empty">検索エラー: '+escapeHtml(err.message)+'</div>';}
+}
+
+function selectAllSearch(){
+  searchSelectedRows=[];
+  document.querySelectorAll('.search-result-item').forEach(item=>{
+    item.classList.add('selected');
+    const row=parseInt(item.dataset.row);
+    if(row&&!searchSelectedRows.includes(row)) searchSelectedRows.push(row);
+  });
+  updateSelectedCount();
+}
+function deselectAllSearch(){
+  searchSelectedRows=[];
+  document.querySelectorAll('.search-result-item').forEach(item=>item.classList.remove('selected'));
+  updateSelectedCount();
+}
+function updateSelectedCount(){
+  const el=document.getElementById('reportSelectedCount');
+  if(searchSelectedRows.length>0){el.textContent='📋 '+searchSelectedRows.length+'件のレコードを選択中';el.style.display='block';}
+  else{el.style.display='none';}
 }
 
 function openSearchModal(rec){
@@ -1186,14 +1201,26 @@ async function generateReport(){
   btn.disabled=true;btn.textContent='生成中...';resEl.style.display='none';
   
   const params={action:'generate_doc'};
-  const subj=document.getElementById('reportSubject').value;
-  const type=document.getElementById('reportType').value;
-  const proc=document.getElementById('reportProcName').value;
   const title=document.getElementById('reportTitle').value.trim();
-  if(subj) params.subject=subj;
-  if(type) params.type=type;
-  if(proc) params.procedureName=proc;
   if(title) params.title=title;
+  
+  // 選択行がある場合はrows指定、なければフィルタ条件を送る
+  if(searchSelectedRows.length>0){
+    params.rows=searchSelectedRows.join(',');
+  }else{
+    // フィルタ条件を検索フィルターから取得
+    const subj=document.getElementById('searchSubject').value;
+    const type=document.getElementById('searchType').value;
+    const proc=document.getElementById('searchProcName').value;
+    if(subj) params.subject=subj;
+    if(type) params.type=type;
+    if(proc) params.procedureName=proc;
+    if(!subj&&!type&&!proc){
+      if(!confirm('フィルタ条件なし・レコード未選択の状態です。全件でレポートを生成しますか？')){
+        btn.disabled=false;btn.textContent='Google Docs + PDF を生成';return;
+      }
+    }
+  }
   
   try{
     const data=await gasGet(params);
