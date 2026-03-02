@@ -290,7 +290,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
       <select class="search-filter-select" id="genbaDetailSelect" onchange="onDetailChange()" style="width:100%;margin-bottom:6px;font-size:13px">
         <option value="">詳細を選択 / 新規入力...</option>
       </select>
-      <input class="setting-input" id="genbaDetailCustom" type="text" placeholder="新しい詳細を入力（例: 分離槽、バーナー部）" style="font-size:13px;display:none">
+      <input class="setting-input" id="genbaDetailCustom" type="text" placeholder="例: 分離槽（三層構造、オイルスキマー使用）" style="font-size:13px;display:none">
     </div>
 
     <!-- Record type -->
@@ -544,7 +544,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
     <div style="margin-bottom:16px">
       <div style="font-size:11px;font-weight:600;color:var(--text-dim);letter-spacing:1px;margin-bottom:6px">詳細・前提条件（任意）</div>
       <div style="display:flex;gap:8px;align-items:flex-start">
-        <textarea class="text-area" id="genbaDetailInput" rows="3" placeholder="例：鍛造包丁の刃付け研削工程" style="min-height:80px;flex:1" onclick="event.stopPropagation()"></textarea>
+        <textarea class="text-area" id="genbaDetailInput" rows="3" placeholder="設備の概要・構成・前提条件を記入&#10;例：焼入れ炉。洗浄槽の後段に分離槽あり。&#10;オイルスキマーで油水分離。槽は三層構造。" style="min-height:80px;flex:1" onclick="event.stopPropagation()"></textarea>
         <button class="voice-input-btn" id="voiceBtnGD" onclick="event.stopPropagation();toggleVoiceInput('genbaDetailInput','voiceBtnGD')" title="音声入力">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0014 0"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
         </button>
@@ -754,7 +754,8 @@ async function runAIStep1(mode){
   if(id.pLbl) document.getElementById(id.pLbl).textContent='AI がテキスト修正中...';
   const dictWords=state.dictionary.join('、');
   const genba=getActiveGenba();
-  const ctx=genba?`対象: ${genba.name}${genba.detail?'\n詳細: '+genba.detail:''}\n`:'';
+  const detailText=state.activeDetail||(genba?(genba.detail||''):'');
+  const ctx=genba?`対象: ${genba.name}${genba.detail?'\n前提条件: '+genba.detail:''}${detailText&&detailText!==genba.detail?'\n作業箇所: '+detailText:''}\n`:'';
   const dict=dictWords?`専門用語: ${dictWords}\n`:'';
   const sys=`あなたは音声メモのテキスト修正アシスタントです。\n${ctx}${dict}タスク: 音声認識の誤変換を修正し読みやすくする。内容は変えない。\nJSON形式のみで返す（バッククォート不要）:\n{"corrected":"修正後テキスト"}`;
   try{
@@ -779,7 +780,8 @@ async function runAIStep2(mode){
   document.getElementById(id.proc).classList.add('visible');
   if(id.pLbl) document.getElementById(id.pLbl).textContent='AI が構造化整理中...';
   const genba=getActiveGenba();
-  const ctx=genba?`対象: ${genba.name}${genba.detail?'\n詳細: '+genba.detail:''}\n`:'';
+  const detailText=state.activeDetail||(genba?(genba.detail||''):'');
+  const ctx=genba?`対象: ${genba.name}${genba.detail?'\n前提条件: '+genba.detail:''}${detailText&&detailText!==genba.detail?'\n作業箇所: '+detailText:''}\n`:'';
   const sys=`あなたは製造現場の音声記録を整理するアシスタントです。
 ${ctx}
 ## タスク
