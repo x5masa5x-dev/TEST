@@ -308,7 +308,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
         <span>写真を追加</span>
       </div>
     </div>
-    <input type="file" accept="image/*" capture="environment" id="fileInput" class="sr-only">
+    <input type="file" accept="image/*" id="fileInput" class="sr-only">
 
     <!-- Input mode -->
     <div class="mode-selector" style="margin-top:16px">
@@ -424,7 +424,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
       <div id="reportSelectedCount" style="font-size:12px;font-weight:600;color:var(--primary);margin-bottom:10px;display:none"></div>
       <div class="report-row">
         <div class="report-label">タイトル</div>
-        <input class="search-input" id="reportTitle" type="text" placeholder="自動生成（対象名+レポート）" style="min-width:0">
+        <input class="search-input" id="reportTitle" type="text" placeholder="空欄なら「対象名 タイプ レポート 日付」で自動生成" style="min-width:0">
       </div>
       <button class="report-btn" id="reportBtn" onclick="generateReport()">Google Docs + PDF を生成</button>
       <div id="reportResult" style="display:none"></div>
@@ -489,7 +489,16 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
       <div class="ai-structured-block" id="modalStructured"></div>
     </div>
     <div class="modal-meta" id="modalMeta"></div>
+    <!-- 追記エリア -->
+    <div id="modalAppendArea" style="display:none;margin-top:12px">
+      <textarea class="text-area" id="modalAppendText" placeholder="追記内容を入力...&#10;例：原因はたぶん○○だった。次回は△△する。" style="min-height:80px;font-size:13px"></textarea>
+      <div class="ai-btns" style="margin-top:8px">
+        <button class="ai-btn" onclick="submitAppend(false)" style="flex:1">追記して再送</button>
+        <button class="ai-btn s2" onclick="submitAppend(true)" style="flex:1">AI再整理して再送</button>
+      </div>
+    </div>
     <button class="modal-close" onclick="closeModal()">閉じる</button>
+    <button class="modal-append-btn" onclick="toggleAppendArea()" style="width:100%;padding:14px;border-radius:10px;border:1px solid var(--amber);background:var(--amber-dim);color:var(--amber);font-family:var(--fb);font-size:14px;cursor:pointer;margin-top:8px">追記・編集して再送</button>
     <button class="modal-delete" onclick="deleteRecord()">この記録を削除</button>
   </div>
 </div>
@@ -931,10 +940,64 @@ function openModal(idx){
   if(rec.context) meta+='  |  '+rec.context; if(rec.recType) meta+='  |  '+rec.recType; if(rec.procedureName) meta+=' / '+rec.procedureName;
   document.getElementById('modalMeta').textContent=meta;
   document.querySelector('.modal-delete').style.display='block';
+  document.querySelector('.modal-append-btn').style.display=rec.syncStatus==='sent'?'block':'none';
+  document.getElementById('modalAppendArea').style.display='none';
+  document.getElementById('modalAppendText').value='';
   document.getElementById('modal').classList.add('open');document.body.style.overflow='hidden';
 }
 function closeModal(){document.getElementById('modal').classList.remove('open');document.body.style.overflow='';}
 function deleteRecord(){if(state.modalRecordIdx<0) return;if(!confirm('この記録を削除しますか？')) return;state.records.splice(state.modalRecordIdx,1);persistRecords();closeModal();renderHistory();showToast('削除しました');}
+
+// v10: 追記・再送機能
+function toggleAppendArea(){
+  const area=document.getElementById('modalAppendArea');
+  area.style.display=area.style.display==='none'?'block':'none';
+  if(area.style.display==='block') document.getElementById('modalAppendText').focus();
+}
+async function submitAppend(withAI){
+  if(state.modalRecordIdx<0) return;
+  const rec=state.records[state.modalRecordIdx];
+  const appendText=document.getElementById('modalAppendText').value.trim();
+  if(!appendText){showToast('追記内容を入力してください','error');return;}
+  
+  // 元テキストに追記を結合
+  const combined=(rec.corrected||rec.transcript||'')+'\n\n【追記】'+appendText;
+  rec.corrected=combined;
+  rec.transcript=(rec.transcript||'')+'\n\n【追記】'+appendText;
+  
+  // AI再整理
+  if(withAI&&state.apiKey){
+    try{
+      showToast('AI再整理中...');
+      const dict=state.dictionary.length>0?'\n用語辞書: '+state.dictionary.join(', '):'';
+      const sys2=`あなたは製造現場の音声記録を整理するアシスタントです。
+## タスク
+話者が実況的に喋った内容を、要点ごとにカテゴリ分けして整理する。
+
+## ルール
+- カテゴリ名は内容に応じて自由に決める（目的,理由,作業内容,手順,設定値,結果,問題点,対処,注意点,改善案,次回TODO,補足 など）
+- カテゴリの数は内容に応じて柔軟に増減する
+- 各カテゴリの値には要点を「・」区切りで列挙する。要約しすぎず、発言のポイントを簡潔に並べる
+- 話者が時系列バラバラに喋っていても、最適な論理順に並べ直す
+- 言い直しや重複は統合し、言い間違いは正す
+- 【追記】の内容も統合して整理する
+- 各値はフラットな文字列のみ。入れ子オブジェクト/配列は禁止
+${dict}
+## 出力形式（JSON、バッククォート不要）
+{"structured":{"カテゴリ名1":"・ポイント1\\n・ポイント2","カテゴリ名2":"・ポイント1\\n・ポイント2",...}}`;
+      const result=await callAPI(sys2,combined);
+      try{const j=JSON.parse(result);if(j.structured){rec.structured=j.structured;}}catch(e){}
+    }catch(err){debugLog('追記AI再整理失敗: '+err.message);}
+  }
+  
+  // 再送
+  rec.syncStatus='pending';
+  persistRecords();
+  if(state.gasUrl) sendToSheet(rec);
+  
+  closeModal();renderHistory();
+  showToast('追記して再送しました');
+}
 
 // DICT
 function addDictWord(){const inp=document.getElementById('dictInput'),w=inp.value.trim();if(!w) return;if(state.dictionary.includes(w)){showToast('登録済み','info');return;}state.dictionary.push(w);localStorage.setItem('gr_dict',JSON.stringify(state.dictionary));inp.value='';renderDict();showToast('「'+w+'」を追加');}
@@ -993,9 +1056,63 @@ function closeGenbaModal(){document.getElementById('genbaModal').classList.remov
 function saveGenba(){
   const name=document.getElementById('genbaNameInput').value.trim(),detail=document.getElementById('genbaDetailInput').value.trim();
   if(!name){showToast('対象名を入力','error');return;}
-  if(genbaEditMode==='new'){const g={id:'genba_'+Date.now(),name,detail,createdAt:new Date().toISOString()};state.genbas.push(g);state.activeGenbaId=g.id;showToast('「'+name+'」を開始');}
-  else{const g=getActiveGenba();if(g){g.name=name;g.detail=detail;showToast('対象情報を更新');}}
-  saveGenbas();renderGenbaSelector();closeGenbaModal();
+  if(genbaEditMode==='new'){
+    const g={id:'genba_'+Date.now(),name,detail,createdAt:new Date().toISOString()};
+    state.genbas.push(g);state.activeGenbaId=g.id;
+    saveGenbas();renderGenbaSelector();closeGenbaModal();showToast('「'+name+'」を開始');
+    // GASにも保存
+    syncGenbaToServer(g,'new');
+  } else {
+    const g=getActiveGenba();
+    if(g){g.name=name;g.detail=detail;
+      saveGenbas();renderGenbaSelector();closeGenbaModal();showToast('対象情報を更新');
+      syncGenbaToServer(g,'edit');
+    }
+  }
+}
+
+// v10: 対象マスターをGASと同期
+async function syncGenbaToServer(genba,mode){
+  if(!state.gasUrl) return;
+  try{
+    const res=await fetch(state.gasUrl,{method:'POST',headers:{'Content-Type':'text/plain'},
+      body:JSON.stringify({_action:'save_genba',id:genba.id,name:genba.name,detail:genba.detail||''})});
+    const result=await res.json();
+    if(result.success&&result.genba&&result.genba.id){
+      // サーバーのIDで更新（新規の場合）
+      const local=state.genbas.find(g=>g.id===genba.id);
+      if(local&&mode==='new'){local.id=result.genba.id;if(state.activeGenbaId===genba.id) state.activeGenbaId=result.genba.id;}
+      saveGenbas();renderGenbaSelector();
+      debugLog('対象マスター同期完了: '+genba.name);
+    }
+  }catch(err){debugLog('対象マスター同期エラー: '+err.message);}
+}
+async function loadGenbasFromServer(){
+  if(!state.gasUrl) return;
+  try{
+    const data=await gasGet({action:'get_genbas'});
+    if(data.success&&data.genbas){
+      // サーバーのデータでローカルを更新（マージ）
+      const serverGenbas=data.genbas;
+      const localIds=new Set(state.genbas.map(g=>g.id));
+      const serverIds=new Set(serverGenbas.map(g=>g.id));
+      // サーバーにあってローカルにないものを追加
+      serverGenbas.forEach(sg=>{
+        if(!localIds.has(sg.id)){state.genbas.push(sg);}
+        else{
+          // 既存のものはサーバーの名前・詳細で上書き
+          const local=state.genbas.find(g=>g.id===sg.id);
+          if(local){local.name=sg.name;local.detail=sg.detail||'';}
+        }
+      });
+      // ローカルにだけあってサーバーにないもの → サーバーに送信
+      state.genbas.forEach(lg=>{
+        if(!serverIds.has(lg.id)) syncGenbaToServer(lg,'new');
+      });
+      saveGenbas();renderGenbaSelector();
+      debugLog('対象マスター読込完了: '+state.genbas.length+'件');
+    }
+  }catch(err){debugLog('対象マスター読込エラー: '+err.message);}
 }
 
 // VOICE INPUT (settings)
@@ -1046,19 +1163,20 @@ async function initSearchPage(){
     document.getElementById('searchResults').innerHTML='<div class="search-empty">設定タブでGAS URLを入力してください</div>';
     return;
   }
-  if(!searchCache.loaded){
-    try{
-      document.getElementById('searchResults').innerHTML='<div class="search-loading">データ取得中...</div>';
-      const data=await gasGet({action:'search',limit:'1'});
-      searchCache.subjects=data.subjects||[];
-      searchCache.types=data.types||[];
-      searchCache.procedureNames=data.procedureNames||[];
-      searchCache.loaded=true;
-      populateSearchFilters();
+  // 毎回サーバーからフィルタリストを更新
+  try{
+    if(!searchCache.loaded) document.getElementById('searchResults').innerHTML='<div class="search-loading">データ取得中...</div>';
+    const data=await gasGet({action:'search',limit:'1'});
+    searchCache.subjects=data.subjects||[];
+    searchCache.types=data.types||[];
+    searchCache.procedureNames=data.procedureNames||[];
+    searchCache.loaded=true;
+    populateSearchFilters();
+    if(document.querySelectorAll('.search-result-item').length===0){
       document.getElementById('searchResults').innerHTML='<div class="search-empty">キーワードやフィルターで検索してください<br>'+data.total+'件のレコードがあります</div>';
-    }catch(err){
-      document.getElementById('searchResults').innerHTML='<div class="search-empty">データ取得に失敗: '+escapeHtml(err.message)+'</div>';
     }
+  }catch(err){
+    if(!searchCache.loaded) document.getElementById('searchResults').innerHTML='<div class="search-empty">データ取得に失敗: '+escapeHtml(err.message)+'</div>';
   }
 }
 
@@ -1190,6 +1308,9 @@ function openSearchModal(rec){
   document.getElementById('modalMeta').textContent=meta;
   state.modalRecordIdx=-1; // 検索結果からの表示なのでローカル削除は無効
   document.querySelector('.modal-delete').style.display='none';
+  document.querySelector('.modal-append-btn').style.display='none';
+  document.getElementById('modalAppendArea').style.display='none';
+  document.getElementById('modalAppendText').value='';
   document.getElementById('modal').classList.add('open');document.body.style.overflow='hidden';
 }
 
@@ -1244,6 +1365,8 @@ async function generateReport(){
 renderDict();renderHistory();updateSave();renderGenbaSelector();
 debugLog('GENBA REC v10.0 初期化完了');
 debugLog('Speech: '+(state.speechSupported?'対応':'非対応'));
+// 起動時に対象マスターをサーバーから同期
+if(state.gasUrl) setTimeout(loadGenbasFromServer,500);
 </script>
 </body>
 </html>
