@@ -530,6 +530,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
     </div>
     <button class="save-btn save-btn-primary" style="width:100%;border-radius:10px" id="genbaSaveBtn" onclick="event.stopPropagation();saveGenba()">この対象で開始</button>
     <button class="modal-close" style="margin-top:10px" onclick="event.stopPropagation();closeGenbaModal()">キャンセル</button>
+    <button class="modal-delete" id="genbaDeleteBtn" style="display:none;margin-top:6px" onclick="event.stopPropagation();deleteGenba()">この対象を削除</button>
   </div>
 </div>
 
@@ -543,7 +544,7 @@ let state = {
   records:[], dictionary:[], genbas:[], activeGenbaId:null,
   apiKey:'', gasUrl:'', recType:'日常記録', procedureName:'', mode:'voice',
   debugMode:false, speechSupported:false, historyFilter:'',
-  debugTapCount:0, debugTapTimer:null, modalRecordIdx:-1,
+  debugTapCount:0, debugTapTimer:null, modalRecordIdx:-1, modalSearchRec:null,
 };
 try {
   state.records = JSON.parse(localStorage.getItem('gr_records')||localStorage.getItem('gn_records')||'[]');
@@ -955,17 +956,24 @@ function toggleAppendArea(){
   if(area.style.display==='block') document.getElementById('modalAppendText').focus();
 }
 async function submitAppend(withAI){
-  if(state.modalRecordIdx<0) return;
-  const rec=state.records[state.modalRecordIdx];
   const appendText=document.getElementById('modalAppendText').value.trim();
   if(!appendText){showToast('追記内容を入力してください','error');return;}
   
-  // 元テキストに追記を結合
-  const combined=(rec.corrected||rec.transcript||'')+'\n\n【追記】'+appendText;
-  rec.corrected=combined;
-  rec.transcript=(rec.transcript||'')+'\n\n【追記】'+appendText;
+  const isFromSearch=(state.modalRecordIdx<0 && state.modalSearchRec);
+  
+  // 元テキストを取得
+  let origText='';
+  if(isFromSearch){
+    origText=state.modalSearchRec['AI修正テキスト']||state.modalSearchRec['元テキスト']||'';
+  }else if(state.modalRecordIdx>=0){
+    const rec=state.records[state.modalRecordIdx];
+    origText=rec.corrected||rec.transcript||'';
+  }else{showToast('対象のレコードがありません','error');return;}
+  
+  const combined=origText+'\n\n【追記】'+appendText;
   
   // AI再整理
+  let structuredResult=null;
   if(withAI&&state.apiKey){
     try{
       showToast('AI再整理中...');
@@ -986,24 +994,72 @@ ${dict}
 ## 出力形式（JSON、バッククォート不要）
 {"structured":{"カテゴリ名1":"・ポイント1\\n・ポイント2","カテゴリ名2":"・ポイント1\\n・ポイント2",...}}`;
       const result=await callAPI(sys2,combined);
-      try{const j=JSON.parse(result);if(j.structured){rec.structured=j.structured;}}catch(e){}
+      try{const j=JSON.parse(result);if(j.structured) structuredResult=j.structured;}catch(e){}
     }catch(err){debugLog('追記AI再整理失敗: '+err.message);}
   }
   
-  // 再送
-  rec.syncStatus='pending';
-  persistRecords();
-  if(state.gasUrl) sendToSheet(rec);
-  
-  closeModal();renderHistory();
-  showToast('追記して再送しました');
+  if(isFromSearch){
+    // 検索結果から → GAS経由でスプレッドシートの行を直接更新
+    const rowNum=state.modalSearchRec._row;
+    if(!rowNum){showToast('行番号が不明です','error');return;}
+    try{
+      showToast('スプレッドシートを更新中...');
+      const payload={_action:'update_row',row:rowNum,corrected:combined,transcript:(state.modalSearchRec['元テキスト']||'')+'\n\n【追記】'+appendText};
+      if(structuredResult) payload.structured=JSON.stringify(structuredResult);
+      const res=await fetch(state.gasUrl,{method:'POST',headers:{'Content-Type':'text/plain'},body:JSON.stringify(payload)});
+      const result=await res.json();
+      if(result.success){
+        closeModal();showToast('追記を保存しました');
+        runSearch(); // 検索結果を更新
+      }else{showToast('更新失敗: '+(result.message||''),'error');}
+    }catch(err){showToast('通信エラー: '+err.message,'error');}
+  }else{
+    // ローカル履歴から → 既存の処理
+    const rec=state.records[state.modalRecordIdx];
+    rec.corrected=combined;
+    rec.transcript=(rec.transcript||'')+'\n\n【追記】'+appendText;
+    if(structuredResult) rec.structured=structuredResult;
+    rec.syncStatus='pending';
+    persistRecords();
+    if(state.gasUrl) sendToSheet(rec);
+    closeModal();renderHistory();
+    showToast('追記して再送しました');
+  }
 }
 
 // DICT
-function addDictWord(){const inp=document.getElementById('dictInput'),w=inp.value.trim();if(!w) return;if(state.dictionary.includes(w)){showToast('登録済み','info');return;}state.dictionary.push(w);localStorage.setItem('gr_dict',JSON.stringify(state.dictionary));inp.value='';renderDict();showToast('「'+w+'」を追加');}
+function addDictWord(){const inp=document.getElementById('dictInput'),w=inp.value.trim();if(!w) return;if(state.dictionary.includes(w)){showToast('登録済み','info');return;}state.dictionary.push(w);localStorage.setItem('gr_dict',JSON.stringify(state.dictionary));inp.value='';renderDict();showToast('「'+w+'」を追加');syncDictToServer('save',w);}
 document.getElementById('dictInput').addEventListener('keydown',e=>{if(e.key==='Enter') addDictWord();});
-function removeDictWord(i){state.dictionary.splice(i,1);localStorage.setItem('gr_dict',JSON.stringify(state.dictionary));renderDict();}
+function removeDictWord(i){const w=state.dictionary[i];state.dictionary.splice(i,1);localStorage.setItem('gr_dict',JSON.stringify(state.dictionary));renderDict();syncDictToServer('delete',w);}
 function renderDict(){const list=document.getElementById('dictList');list.innerHTML='';if(state.dictionary.length===0){list.innerHTML='<div style="padding:12px 0;font-size:12px;color:var(--text-dim)">用語を追加するとAIの精度が上がります</div>';return;}state.dictionary.forEach((w,i)=>{const c=document.createElement('div');c.className='dict-chip';c.innerHTML=`${escapeHtml(w)} <button class="remove" onclick="removeDictWord(${i})">✕</button>`;list.appendChild(c);});}
+
+// v10: 辞書のサーバー同期
+async function syncDictToServer(action,word){
+  if(!state.gasUrl) return;
+  try{
+    await fetch(state.gasUrl,{method:'POST',headers:{'Content-Type':'text/plain'},
+      body:JSON.stringify({_action:action==='save'?'save_dict':'delete_dict',word:word})});
+    debugLog('辞書同期: '+action+' '+word);
+  }catch(err){debugLog('辞書同期エラー: '+err.message);}
+}
+async function loadDictFromServer(){
+  if(!state.gasUrl) return;
+  try{
+    const data=await gasGet({action:'get_dict'});
+    if(data.success&&data.words){
+      // サーバーとローカルをマージ
+      const localSet=new Set(state.dictionary);
+      const serverSet=new Set(data.words);
+      // サーバーにあってローカルにないもの追加
+      data.words.forEach(w=>{if(!localSet.has(w)) state.dictionary.push(w);});
+      // ローカルにあってサーバーにないもの送信
+      state.dictionary.forEach(w=>{if(!serverSet.has(w)) syncDictToServer('save',w);});
+      localStorage.setItem('gr_dict',JSON.stringify(state.dictionary));
+      renderDict();
+      debugLog('辞書読込完了: '+state.dictionary.length+'語');
+    }
+  }catch(err){debugLog('辞書読込エラー: '+err.message);}
+}
 
 // SETTINGS
 function loadSettings(){document.getElementById('apiKeyInput').value=state.apiKey;document.getElementById('gasUrlInput').value=state.gasUrl;}
@@ -1048,6 +1104,7 @@ function openGenbaModal(mode){
   genbaEditMode=mode;
   document.getElementById('genbaModalTitle').textContent=mode==='new'?'新しい対象を登録':'対象を編集';
   document.getElementById('genbaSaveBtn').textContent=mode==='new'?'この対象で開始':'更新する';
+  document.getElementById('genbaDeleteBtn').style.display=mode==='edit'?'block':'none';
   if(mode==='new'){document.getElementById('genbaNameInput').value='';document.getElementById('genbaDetailInput').value='';}
   else{const g=getActiveGenba();if(g){document.getElementById('genbaNameInput').value=g.name;document.getElementById('genbaDetailInput').value=g.detail||'';}}
   document.getElementById('genbaModal').classList.add('open');document.body.style.overflow='hidden';
@@ -1113,6 +1170,26 @@ async function loadGenbasFromServer(){
       debugLog('対象マスター読込完了: '+state.genbas.length+'件');
     }
   }catch(err){debugLog('対象マスター読込エラー: '+err.message);}
+}
+
+// v10: 対象の削除（ローカル+サーバー）
+async function deleteGenba(){
+  const g=getActiveGenba();
+  if(!g) return;
+  if(!confirm('「'+g.name+'」を削除しますか？\n※記録データは残ります')) return;
+  // ローカルから削除
+  state.genbas=state.genbas.filter(x=>x.id!==g.id);
+  state.activeGenbaId=null;
+  saveGenbas();renderGenbaSelector();closeGenbaModal();
+  showToast('「'+g.name+'」を削除しました');
+  // サーバーからも削除
+  if(state.gasUrl){
+    try{
+      await fetch(state.gasUrl,{method:'POST',headers:{'Content-Type':'text/plain'},
+        body:JSON.stringify({_action:'delete_genba',id:g.id})});
+      debugLog('対象マスター削除同期: '+g.name);
+    }catch(err){debugLog('対象マスター削除同期エラー: '+err.message);}
+  }
 }
 
 // VOICE INPUT (settings)
@@ -1244,9 +1321,10 @@ async function runSearch(){
       
       item.innerHTML='<div class="search-result-check" data-row="'+rowNum+'">✓</div><div class="search-result-body"><div class="search-result-text">'+escapeHtml(text)+'</div>'+structHtml+'<div class="search-result-meta">'+escapeHtml(meta)+'</div></div>';
       
-      // チェックボックスクリックで選択切替
-      item.onclick=(e)=>{
-        e.preventDefault();
+      // チェックボックス部分クリック→選択切替
+      const checkEl=item.querySelector('.search-result-check');
+      checkEl.onclick=(e)=>{
+        e.stopPropagation();
         item.classList.toggle('selected');
         if(item.classList.contains('selected')){
           if(!searchSelectedRows.includes(rowNum)) searchSelectedRows.push(rowNum);
@@ -1254,6 +1332,12 @@ async function runSearch(){
           searchSelectedRows=searchSelectedRows.filter(r=>r!==rowNum);
         }
         updateSelectedCount();
+      };
+      // 本文部分クリック→詳細モーダル
+      const bodyEl=item.querySelector('.search-result-body');
+      bodyEl.onclick=(e)=>{
+        e.stopPropagation();
+        openSearchModal(rec);
       };
       
       el.appendChild(item);
@@ -1306,9 +1390,10 @@ function openSearchModal(rec){
   if(rec['手順名']) meta+='  |  '+rec['手順名'];
   if(rec['ステップ番号']) meta+=' Step'+rec['ステップ番号'];
   document.getElementById('modalMeta').textContent=meta;
-  state.modalRecordIdx=-1; // 検索結果からの表示なのでローカル削除は無効
+  state.modalRecordIdx=-1;
+  state.modalSearchRec=rec; // 検索結果レコードを保持（行番号含む）
   document.querySelector('.modal-delete').style.display='none';
-  document.querySelector('.modal-append-btn').style.display='none';
+  document.querySelector('.modal-append-btn').style.display='block';
   document.getElementById('modalAppendArea').style.display='none';
   document.getElementById('modalAppendText').value='';
   document.getElementById('modal').classList.add('open');document.body.style.overflow='hidden';
@@ -1365,8 +1450,8 @@ async function generateReport(){
 renderDict();renderHistory();updateSave();renderGenbaSelector();
 debugLog('GENBA REC v10.0 初期化完了');
 debugLog('Speech: '+(state.speechSupported?'対応':'非対応'));
-// 起動時に対象マスターをサーバーから同期
-if(state.gasUrl) setTimeout(loadGenbasFromServer,500);
+// 起動時に対象マスター＋辞書をサーバーから同期
+if(state.gasUrl){setTimeout(loadGenbasFromServer,500);setTimeout(loadDictFromServer,800);}
 </script>
 </body>
 </html>
