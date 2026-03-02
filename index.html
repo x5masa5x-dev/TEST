@@ -1070,7 +1070,10 @@ function exportData(){const d={records:state.records,dictionary:state.dictionary
 async function sendToSheet(rec){
   if(!state.gasUrl) return;
   const genba=state.genbas.find(g=>g.id===rec.genbaId);
-  const payload={subject:genba?genba.name:'',subjectDetail:genba?(genba.detail||''):'',type:rec.recType||'日常記録',procedureName:rec.procedureName||'',transcript:rec.transcript||'',corrected:rec.corrected||'',structured:rec.structured?JSON.stringify(rec.structured):'',photos:rec.photos||[]};
+  // genbaIdでの検索に失敗した場合はrec自体に保存済みの名前を使う
+  const subject=genba?genba.name:(rec.context||'');
+  const subjectDetail=genba?(genba.detail||''):(rec.contextDetail||'');
+  const payload={subject:subject,subjectDetail:subjectDetail,type:rec.recType||'日常記録',procedureName:rec.procedureName||'',transcript:rec.transcript||'',corrected:rec.corrected||'',structured:rec.structured?JSON.stringify(rec.structured):'',photos:rec.photos||[]};
   try{
     debugLog('シート送信中...');
     const res=await fetch(state.gasUrl,{method:'POST',headers:{'Content-Type':'text/plain'},body:JSON.stringify(payload)});
@@ -1135,11 +1138,7 @@ async function syncGenbaToServer(genba,mode){
     const res=await fetch(state.gasUrl,{method:'POST',headers:{'Content-Type':'text/plain'},
       body:JSON.stringify({_action:'save_genba',id:genba.id,name:genba.name,detail:genba.detail||''})});
     const result=await res.json();
-    if(result.success&&result.genba&&result.genba.id){
-      // サーバーのIDで更新（新規の場合）
-      const local=state.genbas.find(g=>g.id===genba.id);
-      if(local&&mode==='new'){local.id=result.genba.id;if(state.activeGenbaId===genba.id) state.activeGenbaId=result.genba.id;}
-      saveGenbas();renderGenbaSelector();
+    if(result.success){
       debugLog('対象マスター同期完了: '+genba.name);
     }
   }catch(err){debugLog('対象マスター同期エラー: '+err.message);}
