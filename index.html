@@ -500,7 +500,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
     <div class="modal-meta" id="modalMeta"></div>
     <!-- 追記エリア -->
     <div id="modalAppendArea" style="display:none;margin-top:12px">
-      <div style="font-size:11px;color:var(--text-dim);margin-bottom:8px;font-weight:600">STEP 1: 追記内容を入力</div>
+      <div style="font-size:11px;color:var(--text-dim);margin-bottom:8px;font-weight:600">追記内容を入力</div>
       <div style="position:relative">
         <textarea class="text-area" id="modalAppendText" placeholder="追記内容を入力...&#10;例：原因はたぶん○○だった。次回は△△する。" style="min-height:80px;font-size:13px;padding-right:44px"></textarea>
         <button onclick="toggleAppendVoice()" id="appendVoiceBtn" style="position:absolute;right:8px;top:8px;width:36px;height:36px;border-radius:50%;border:1.5px solid var(--primary);background:var(--primary-dim);color:var(--primary);cursor:pointer;font-size:16px" title="音声入力">🎤</button>
@@ -513,15 +513,24 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
         <div id="appendPhotoPreview" style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap"></div>
       </div>
       <div class="ai-btns" style="margin-top:10px">
-        <button class="ai-btn" onclick="appendStep2_plain()" style="flex:1">追記して再送</button>
-        <button class="ai-btn s2" onclick="appendStep2_ai()" style="flex:1">② AI再整理</button>
+        <button class="ai-btn" onclick="appendAI_step1()">① テキスト修正</button>
+        <button class="ai-btn s2" onclick="appendAI_step2()">② 構造化整理</button>
       </div>
-      <!-- STEP 2: AI結果確認 -->
-      <div id="appendAIResult" style="display:none;margin-top:12px">
-        <div style="font-size:11px;color:var(--text-dim);margin-bottom:8px;font-weight:600">STEP 2: AI整理結果を確認・編集</div>
-        <textarea class="text-area" id="appendAIEditArea" style="min-height:120px;font-size:12px;font-family:var(--fm);line-height:1.6"></textarea>
-        <button class="ai-btn s2" onclick="appendStep3_send()" style="width:100%;margin-top:8px">③ この内容で再送</button>
+      <!-- AI処理中 -->
+      <div class="ai-processing" id="appendAIProcessing"><div class="ai-spinner"></div><div class="ai-processing-text" id="appendAIProcessingText">AI が処理しています...</div></div>
+      <!-- AI結果表示 -->
+      <div class="ai-result" id="appendAIResult">
+        <div class="ai-result-header"><div class="ai-chip">AI</div><div class="ai-label" id="appendAIResultLabel">修正結果</div></div>
+        <div class="ai-corrected-block" id="appendCorrectedBlock">
+          <div class="ai-corrected-label">修正済みテキスト</div>
+          <button class="ai-edit-btn" onclick="toggleAppendEdit()">編集</button>
+          <div class="ai-corrected-text" id="appendCorrectedText"></div>
+          <textarea class="ai-edit-area" id="appendEditArea"></textarea>
+        </div>
+        <div class="ai-structured-block" id="appendStructuredBlock" style="display:none"></div>
       </div>
+      <!-- 送信ボタン（AI処理後に表示） -->
+      <button class="ai-btn s2" id="appendSendBtn" onclick="appendSend()" style="width:100%;margin-top:10px;display:none">この内容で再送</button>
     </div>
     <button class="modal-close" onclick="closeModal()">閉じる</button>
     <button class="modal-append-btn" onclick="toggleAppendArea()" style="width:100%;padding:14px;border-radius:10px;border:1px solid var(--amber);background:var(--amber-dim);color:var(--amber);font-family:var(--fb);font-size:14px;cursor:pointer;margin-top:8px">追記・編集して再送</button>
@@ -1019,9 +1028,11 @@ function openModal(idx){
 function closeModal(){document.getElementById('modal').classList.remove('open');document.body.style.overflow='';}
 function deleteRecord(){if(state.modalRecordIdx<0) return;if(!confirm('この記録を削除しますか？')) return;state.records.splice(state.modalRecordIdx,1);persistRecords();closeModal();renderHistory();showToast('削除しました');}
 
-// v11: 追記・再送機能（3ステップ + 音声入力 + 画像追加）
+// v11: 追記・再送機能（記録タブと同じフロー）
 let appendPhotos=[];
 let appendVoiceRec=null;
+let appendCorrected='';
+let appendStructured=null;
 
 function toggleAppendArea(){
   const area=document.getElementById('modalAppendArea');
@@ -1030,7 +1041,15 @@ function toggleAppendArea(){
   if(isHidden){
     document.getElementById('modalAppendText').focus();
     appendPhotos=[];renderAppendPhotos();
-    document.getElementById('appendAIResult').style.display='none';
+    appendCorrected='';appendStructured=null;
+    document.getElementById('appendAIResult').classList.remove('visible');
+    document.getElementById('appendAIProcessing').classList.remove('visible');
+    document.getElementById('appendStructuredBlock').style.display='none';
+    document.getElementById('appendStructuredBlock').innerHTML='';
+    document.getElementById('appendCorrectedText').textContent='';
+    document.getElementById('appendEditArea').style.display='none';
+    document.getElementById('appendSendBtn').style.display='none';
+    document.getElementById('appendAIResultLabel').textContent='修正結果';
   }
 }
 
@@ -1066,8 +1085,8 @@ function toggleAppendVoice(){
   sr.start();appendVoiceRec=sr;btn.style.background='var(--red)';ind.style.display='block';
 }
 
-// ヘルパー: 元テキストと追記内容を取得
-function getAppendContext_(){
+// 元テキスト+追記を結合
+function getAppendCombined_(){
   const appendText=document.getElementById('modalAppendText').value.trim();
   const isFromSearch=(state.modalRecordIdx<0 && state.modalSearchRec);
   let origText='';
@@ -1076,41 +1095,70 @@ function getAppendContext_(){
   return {appendText,origText,isFromSearch,combined:origText+(appendText?'\n\n【追記】'+appendText:'')};
 }
 
-// 追記して即再送（AIなし）
-async function appendStep2_plain(){
-  const ctx=getAppendContext_();
-  if(!ctx.appendText&&appendPhotos.length===0){showToast('追記内容を入力してください','error');return;}
-  if(ctx.isFromSearch){
-    const rowNum=state.modalSearchRec._row;
-    if(!rowNum){showToast('行番号が不明です','error');return;}
-    try{
-      showToast('スプレッドシートを更新中...');
-      const payload={_action:'update_row',row:rowNum,corrected:ctx.combined,transcript:(state.modalSearchRec['元テキスト']||'')+(ctx.appendText?'\n\n【追記】'+ctx.appendText:'')};
-      if(appendPhotos.length>0) payload.appendPhotos=appendPhotos;
-      const res=await fetch(state.gasUrl,{method:'POST',headers:{'Content-Type':'text/plain'},body:JSON.stringify(payload)});
-      const result=await res.json();
-      if(result.success){closeModal();showToast('追記を保存しました');runSearch();}
-      else showToast('更新失敗: '+(result.message||''),'error');
-    }catch(err){showToast('通信エラー: '+err.message,'error');}
-  }else{
-    const rec=state.records[state.modalRecordIdx];
-    if(ctx.appendText){rec.corrected=ctx.combined;rec.transcript=(rec.transcript||'')+'\n\n【追記】'+ctx.appendText;}
-    if(appendPhotos.length>0) rec.photos=[...(rec.photos||[]),...appendPhotos];
-    rec.syncStatus='pending';persistRecords();
-    if(state.gasUrl) sendToSheet(rec);
-    closeModal();renderHistory();showToast('追記して再送しました');
+// 修正テキスト編集切替
+function toggleAppendEdit(){
+  const txt=document.getElementById('appendCorrectedText'),ea=document.getElementById('appendEditArea');
+  if(ea.style.display==='none'||!ea.style.display){ea.value=appendCorrected;ea.style.display='block';txt.style.display='none';ea.focus();}
+  else{appendCorrected=ea.value.trim()||appendCorrected;txt.textContent=appendCorrected;ea.style.display='none';txt.style.display='block';}
+}
+
+// ① テキスト修正
+async function appendAI_step1(){
+  const ctx=getAppendCombined_();
+  if(!ctx.appendText){showToast('追記内容を入力してください','error');return;}
+  if(!state.apiKey.trim()){showToast('設定でAPIキーを入力','error');return;}
+  
+  document.getElementById('appendAIProcessing').classList.add('visible');
+  document.getElementById('appendAIProcessingText').textContent='AI がテキスト修正中...';
+  document.getElementById('appendAIResult').classList.remove('visible');
+  
+  const dictWords=state.dictionary.join('、');
+  const genba=getActiveGenba();
+  const detailText=state.activeDetail||(genba?(genba.detail||''):'');
+  const ctxStr=genba?`対象: ${genba.name}${genba.detail?'\n前提条件: '+genba.detail:''}${detailText&&detailText!==genba.detail?'\n作業箇所: '+detailText:''}\n`:'';
+  const dict=dictWords?`専門用語: ${dictWords}\n`:'';
+  const sys=`あなたは音声メモのテキスト修正アシスタントです。\n${ctxStr}${dict}タスク: 音声認識の誤変換を修正し読みやすくする。内容は変えない。\nJSON形式のみで返す（バッククォート不要）:\n{"corrected":"修正後テキスト"}`;
+  
+  try{
+    const raw=await callAPI(sys,`音声メモ:\n${ctx.combined}`);
+    document.getElementById('appendAIProcessing').classList.remove('visible');
+    let parsed;try{parsed=JSON.parse(raw.replace(/```json|```/g,'').trim());}catch(e){parsed={corrected:raw};}
+    appendCorrected=parsed.corrected||ctx.combined;
+    appendStructured=null;
+    document.getElementById('appendCorrectedText').textContent=appendCorrected;
+    document.getElementById('appendStructuredBlock').style.display='none';
+    document.getElementById('appendStructuredBlock').innerHTML='';
+    document.getElementById('appendAIResultLabel').textContent='修正結果（編集可→②で構造化）';
+    document.getElementById('appendEditArea').style.display='none';
+    document.getElementById('appendAIResult').classList.add('visible');
+    document.getElementById('appendSendBtn').style.display='block';
+    document.getElementById('appendSendBtn').textContent='この内容で再送';
+  }catch(err){
+    document.getElementById('appendAIProcessing').classList.remove('visible');
+    showToast('AI処理失敗: '+err.message,'error');
   }
 }
 
-// STEP 2: AI再整理 → 結果を確認・編集エリアに表示
-async function appendStep2_ai(){
-  const ctx=getAppendContext_();
-  if(!ctx.appendText&&appendPhotos.length===0){showToast('追記内容を入力してください','error');return;}
-  if(!state.apiKey){showToast('API Keyを設定してください','error');return;}
-  showToast('AI再整理中...');
-  try{
-    const dict=state.dictionary.length>0?'\n用語辞書: '+state.dictionary.join(', '):'';
-    const sys2=`あなたは製造現場の音声記録を整理するアシスタントです。
+// ② 構造化整理
+async function appendAI_step2(){
+  let text=appendCorrected;
+  const ea=document.getElementById('appendEditArea');
+  if(ea&&ea.style.display!=='none'&&ea.value.trim()){text=ea.value.trim();appendCorrected=text;}
+  if(!text){
+    const ctx=getAppendCombined_();
+    text=ctx.combined;
+    if(!text){showToast('テキストを入力','error');return;}
+  }
+  if(!state.apiKey.trim()){showToast('設定でAPIキーを入力','error');return;}
+  
+  document.getElementById('appendAIProcessing').classList.add('visible');
+  document.getElementById('appendAIProcessingText').textContent='AI が構造化整理中...';
+  
+  const genba=getActiveGenba();
+  const detailText=state.activeDetail||(genba?(genba.detail||''):'');
+  const ctxStr=genba?`対象: ${genba.name}${genba.detail?'\n前提条件: '+genba.detail:''}${detailText&&detailText!==genba.detail?'\n作業箇所: '+detailText:''}\n`:'';
+  const sys=`あなたは製造現場の音声記録を整理するアシスタントです。
+${ctxStr}
 ## タスク
 話者が実況的に喋った内容を、要点ごとにカテゴリ分けして整理する。
 
@@ -1122,30 +1170,55 @@ async function appendStep2_ai(){
 - 言い直しや重複は統合し、言い間違いは正す
 - 【追記】の内容も元の内容と統合して整理する
 - 各値はフラットな文字列のみ
-${dict}
+
 ## 出力形式（JSON、バッククォート不要）
 {"structured":{"カテゴリ名1":"・ポイント1\\n・ポイント2","カテゴリ名2":"・ポイント1\\n・ポイント2",...}}`;
-    const result=await callAPI(sys2,ctx.combined);
-    document.getElementById('appendAIEditArea').value=result;
-    document.getElementById('appendAIResult').style.display='block';
-    showToast('AI整理完了。内容を確認・編集してから再送してください');
-  }catch(err){showToast('AI整理失敗: '+err.message,'error');}
+  
+  try{
+    const raw=await callAPI(sys,`テキスト:\n${text}`);
+    document.getElementById('appendAIProcessing').classList.remove('visible');
+    let parsed;try{parsed=JSON.parse(raw.replace(/```json|```/g,'').trim());}catch(e){parsed=null;}
+    if(parsed&&parsed.structured){
+      appendStructured=parsed.structured;
+      // 構造化結果を表示（記録タブと同じ形式）
+      const sEl=document.getElementById('appendStructuredBlock');
+      sEl.innerHTML='';sEl.style.display='block';
+      for(const[k,v] of Object.entries(parsed.structured)){
+        const row=document.createElement('div');row.className='ai-row';
+        row.innerHTML='<div class="ai-key">'+escapeHtml(k)+'</div><div class="ai-val">'+formatValue(v)+'</div>';
+        sEl.appendChild(row);
+      }
+      document.getElementById('appendAIResultLabel').textContent='構造化整理結果';
+      if(!appendCorrected){appendCorrected=text;}
+      document.getElementById('appendCorrectedText').textContent=appendCorrected;
+    }else{
+      showToast('構造化に失敗しました','error');
+    }
+    document.getElementById('appendAIResult').classList.add('visible');
+    document.getElementById('appendSendBtn').style.display='block';
+    document.getElementById('appendSendBtn').textContent='この内容で再送';
+  }catch(err){
+    document.getElementById('appendAIProcessing').classList.remove('visible');
+    showToast('AI処理失敗: '+err.message,'error');
+  }
 }
 
-// STEP 3: 確認済み内容で再送
-async function appendStep3_send(){
-  const ctx=getAppendContext_();
-  const aiResult=document.getElementById('appendAIEditArea').value.trim();
-  let structuredResult=null;
-  if(aiResult){try{const j=JSON.parse(aiResult);if(j.structured) structuredResult=j.structured;}catch(e){}}
+// 送信
+async function appendSend(){
+  const ctx=getAppendCombined_();
+  // 編集エリアが開いていたら反映
+  const ea=document.getElementById('appendEditArea');
+  if(ea&&ea.style.display!=='none'&&ea.value.trim()) appendCorrected=ea.value.trim();
+  
+  const correctedText=appendCorrected||ctx.combined;
   
   if(ctx.isFromSearch){
     const rowNum=state.modalSearchRec._row;
     if(!rowNum){showToast('行番号が不明です','error');return;}
     try{
       showToast('スプレッドシートを更新中...');
-      const payload={_action:'update_row',row:rowNum,corrected:ctx.combined,transcript:(state.modalSearchRec['元テキスト']||'')+(ctx.appendText?'\n\n【追記】'+ctx.appendText:'')};
-      if(structuredResult) payload.structured=JSON.stringify(structuredResult);
+      const payload={_action:'update_row',row:rowNum,corrected:correctedText,transcript:(state.modalSearchRec['元テキスト']||'')+(ctx.appendText?'\n\n【追記】'+ctx.appendText:'')};
+      if(appendStructured) payload.structured=JSON.stringify(appendStructured);
       if(appendPhotos.length>0) payload.appendPhotos=appendPhotos;
       const res=await fetch(state.gasUrl,{method:'POST',headers:{'Content-Type':'text/plain'},body:JSON.stringify(payload)});
       const result=await res.json();
@@ -1154,15 +1227,15 @@ async function appendStep3_send(){
     }catch(err){showToast('通信エラー: '+err.message,'error');}
   }else{
     const rec=state.records[state.modalRecordIdx];
-    if(ctx.appendText){rec.corrected=ctx.combined;rec.transcript=(rec.transcript||'')+'\n\n【追記】'+ctx.appendText;}
-    if(structuredResult) rec.structured=structuredResult;
+    rec.corrected=correctedText;
+    if(ctx.appendText) rec.transcript=(rec.transcript||'')+'\n\n【追記】'+ctx.appendText;
+    if(appendStructured) rec.structured=appendStructured;
     if(appendPhotos.length>0) rec.photos=[...(rec.photos||[]),...appendPhotos];
     rec.syncStatus='pending';persistRecords();
     if(state.gasUrl) sendToSheet(rec);
     closeModal();renderHistory();showToast('再送しました');
   }
 }
-
 // DICT
 function addDictWord(){const inp=document.getElementById('dictInput'),w=inp.value.trim();if(!w) return;if(state.dictionary.includes(w)){showToast('登録済み','info');return;}state.dictionary.push(w);localStorage.setItem('gr_dict',JSON.stringify(state.dictionary));inp.value='';renderDict();showToast('「'+w+'」を追加');syncDictToServer('save',w);}
 document.getElementById('dictInput').addEventListener('keydown',e=>{if(e.key==='Enter') addDictWord();});
