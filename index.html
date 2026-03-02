@@ -302,7 +302,10 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
     </div>
     <!-- Procedure name (shown only when type=手順) -->
     <div id="procNameRow" style="display:none;margin-bottom:14px">
-      <input class="setting-input" id="procNameInput" type="text" placeholder="手順名（例：砥石交換、メンテナンス、操作手順）" style="font-family:var(--fb);font-size:14px">
+      <select class="search-filter-select" id="procNameSelect" onchange="onProcNameChange()" style="width:100%;margin-bottom:6px;font-size:13px">
+        <option value="">手順名を選択 / 新規入力...</option>
+      </select>
+      <input class="setting-input" id="procNameInput" type="text" placeholder="新しい手順名（例：砥石交換、メンテナンス）" style="font-family:var(--fb);font-size:14px;display:none">
       <div style="font-size:10px;color:var(--text-dim);margin-top:4px">同じ対象＋手順名でステップ番号が自動採番されます</div>
     </div>
 
@@ -631,9 +634,41 @@ function setRecType(type){
   const btn=document.getElementById(map[type]); if(btn) btn.classList.add(cls[type]);
   // 手順名入力欄の表示切替
   document.getElementById('procNameRow').style.display=type==='手順'?'block':'none';
-  if(type!=='手順'){state.procedureName='';document.getElementById('procNameInput').value='';}
+  if(type==='手順') renderProcNameSelector();
+  if(type!=='手順'){state.procedureName='';document.getElementById('procNameInput').value='';document.getElementById('procNameSelect').value='';}
 }
 document.getElementById('procNameInput').addEventListener('input',e=>{state.procedureName=e.target.value.trim();});
+
+// v11: 手順名ドロップダウン（過去の手順名を表示）
+function renderProcNameSelector(){
+  const sel=document.getElementById('procNameSelect');
+  sel.innerHTML='<option value="">手順名を選択 / 新規入力...</option>';
+  // ローカル履歴から過去の手順名を収集（現在の対象に絞る）
+  const genba=getActiveGenba();
+  const genbaName=genba?genba.name:'';
+  const pastNames=new Set();
+  state.records.forEach(r=>{
+    if(r.recType==='手順'&&r.procedureName){
+      if(!genbaName||r.context===genbaName) pastNames.add(r.procedureName);
+    }
+  });
+  // サーバーキャッシュからも取得
+  if(searchCache.procedureNames) searchCache.procedureNames.forEach(p=>pastNames.add(p));
+  pastNames.forEach(name=>{const o=document.createElement('option');o.value=name;o.textContent=name;sel.appendChild(o);});
+  const newOpt=document.createElement('option');newOpt.value='__new__';newOpt.textContent='＋ 新しい手順名を入力';sel.appendChild(newOpt);
+  // 現在のprocedureNameがあればセット
+  if(state.procedureName){
+    sel.value=state.procedureName;
+    if(!sel.value){sel.value='__new__';document.getElementById('procNameInput').style.display='block';document.getElementById('procNameInput').value=state.procedureName;}
+  }
+}
+function onProcNameChange(){
+  const v=document.getElementById('procNameSelect').value;
+  const input=document.getElementById('procNameInput');
+  if(v==='__new__'){input.style.display='block';input.focus();state.procedureName='';}
+  else if(v){input.style.display='none';input.value='';state.procedureName=v;}
+  else{input.style.display='none';input.value='';state.procedureName='';}
+}
 
 // PHOTO
 document.getElementById('fileInput').addEventListener('change',e=>{
@@ -884,7 +919,7 @@ function saveRecord(){
 }
 function resetRecord(){
   state.photos=[];renderPhotoGrid();deleteRec();state.seconds=0;
-  state.procedureName='';document.getElementById('procNameInput').value='';
+  state.procedureName='';document.getElementById('procNameInput').value='';document.getElementById('procNameInput').style.display='none';document.getElementById('procNameSelect').value='';
   state.activeDetail='';
   const ds=document.getElementById('genbaDetailSelect');if(ds) ds.value='';
   const dc=document.getElementById('genbaDetailCustom');if(dc){dc.value='';dc.style.display='none';}
