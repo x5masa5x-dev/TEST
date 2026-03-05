@@ -367,7 +367,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
           <div class="ai-corrected-block" id="aiCorrectedBlock">
             <div class="ai-corrected-label">修正済みテキスト</div>
             <button class="ai-edit-btn" onclick="toggleAIEdit('voice')">編集</button>
-            <div class="ai-corrected-text" id="aiCorrectedText"></div>
+            <div class="ai-corrected-text" id="aiCorrectedText" onclick="toggleAIEdit('voice')" style="cursor:text"></div>
             <textarea class="ai-edit-area" id="aiEditArea"></textarea>
           </div>
           <div class="ai-structured-block" id="aiStructured" style="display:none"></div>
@@ -388,7 +388,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
         <div class="ai-corrected-block" id="aiCorrectedBlockManual">
           <div class="ai-corrected-label">修正済みテキスト</div>
           <button class="ai-edit-btn" onclick="toggleAIEdit('text')">編集</button>
-          <div class="ai-corrected-text" id="aiCorrectedTextManual"></div>
+          <div class="ai-corrected-text" id="aiCorrectedTextManual" onclick="toggleAIEdit('text')" style="cursor:text"></div>
           <textarea class="ai-edit-area" id="aiEditAreaManual"></textarea>
         </div>
         <div class="ai-structured-block" id="aiStructuredManual" style="display:none"></div>
@@ -523,7 +523,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
         <div class="ai-corrected-block" id="appendCorrectedBlock">
           <div class="ai-corrected-label">修正済みテキスト</div>
           <button class="ai-edit-btn" onclick="toggleAppendEdit()">編集</button>
-          <div class="ai-corrected-text" id="appendCorrectedText"></div>
+          <div class="ai-corrected-text" id="appendCorrectedText" onclick="toggleAppendEdit()" style="cursor:text"></div>
           <textarea class="ai-edit-area" id="appendEditArea"></textarea>
         </div>
         <div class="ai-structured-block" id="appendStructuredBlock" style="display:none"></div>
@@ -532,7 +532,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
       <button class="ai-btn s2" id="appendSendBtn" onclick="appendSend()" style="width:100%;margin-top:10px;display:none">この内容で再送</button>
     </div>
     <button class="modal-close" onclick="closeModal()">閉じる</button>
-    <button class="modal-append-btn" onclick="toggleAppendArea()" style="width:100%;padding:14px;border-radius:10px;border:1px solid var(--amber);background:var(--amber-dim);color:var(--amber);font-family:var(--fb);font-size:14px;cursor:pointer;margin-top:8px">追記・編集して再送</button>
+    <button class="modal-append-btn" onclick="toggleAppendArea()" style="width:100%;padding:14px;border-radius:10px;border:1px solid var(--amber);background:var(--amber-dim);color:var(--amber);font-family:var(--fb);font-size:14px;cursor:pointer;margin-top:8px">あとから追記・修正する</button>
     <button class="modal-delete" onclick="deleteRecord()">この記録を削除</button>
   </div>
 </div>
@@ -643,31 +643,30 @@ function setRecType(type){
   // 手順名入力欄の表示切替
   document.getElementById('procNameRow').style.display=type==='手順'?'block':'none';
   if(type==='手順') renderProcNameSelector();
-  if(type!=='手順'){state.procedureName='';document.getElementById('procNameInput').value='';document.getElementById('procNameSelect').value='';}
+  // 手順以外に切り替えた時は非表示にするだけ（値はstate.procedureNameに保持）
 }
 document.getElementById('procNameInput').addEventListener('input',e=>{state.procedureName=e.target.value.trim();});
 
-// v11: 手順名ドロップダウン（過去の手順名を表示）
+// v11: 手順名ドロップダウン（対象に紐づいた手順名のみ表示）
 function renderProcNameSelector(){
   const sel=document.getElementById('procNameSelect');
+  const currentVal=state.procedureName||sel.value;
   sel.innerHTML='<option value="">手順名を選択 / 新規入力...</option>';
-  // ローカル履歴から過去の手順名を収集（現在の対象に絞る）
+  // ローカル履歴から過去の手順名を収集（現在の対象に限定）
   const genba=getActiveGenba();
   const genbaName=genba?genba.name:'';
   const pastNames=new Set();
   state.records.forEach(r=>{
-    if(r.recType==='手順'&&r.procedureName){
-      if(!genbaName||r.context===genbaName) pastNames.add(r.procedureName);
-    }
+    if(r.recType==='手順'&&r.procedureName&&r.context===genbaName) pastNames.add(r.procedureName);
   });
-  // サーバーキャッシュからも取得
-  if(searchCache.procedureNames) searchCache.procedureNames.forEach(p=>pastNames.add(p));
+  // サーバーキャッシュは対象で絞れないので使わない（全件混ざるため）
   pastNames.forEach(name=>{const o=document.createElement('option');o.value=name;o.textContent=name;sel.appendChild(o);});
   const newOpt=document.createElement('option');newOpt.value='__new__';newOpt.textContent='＋ 新しい手順名を入力';sel.appendChild(newOpt);
-  // 現在のprocedureNameがあればセット
-  if(state.procedureName){
-    sel.value=state.procedureName;
-    if(!sel.value){sel.value='__new__';document.getElementById('procNameInput').style.display='block';document.getElementById('procNameInput').value=state.procedureName;}
+  // 現在の値を復元
+  if(currentVal){
+    sel.value=currentVal;
+    if(sel.value===currentVal){state.procedureName=currentVal;}
+    else{sel.value='__new__';document.getElementById('procNameInput').style.display='block';document.getElementById('procNameInput').value=currentVal;state.procedureName=currentVal;}
   }
 }
 function onProcNameChange(){
@@ -844,18 +843,29 @@ ${ctx}
     const raw=await callAPI(sys,`テキスト:\n${text}`);
     document.getElementById(id.proc).classList.remove('visible');
     let parsed; try{parsed=JSON.parse(raw.replace(/```json|```/g,'').trim());}catch(e){parsed={structured:null};}
-    state.aiStructured=parsed.structured||parsed; if(parsed.corrected) state.aiCorrected=parsed.corrected;
+    if(parsed.structured){
+      state.aiStructured=parsed.structured;
+    }else{
+      state.aiStructured=null;
+      showToast('構造化に失敗しました。もう一度②を押してください','error');
+      return;
+    }
+    if(parsed.corrected) state.aiCorrected=parsed.corrected;
+    // 修正済みテキストが空なら元テキストを入れる
+    if(!state.aiCorrected) state.aiCorrected=text;
     state.aiStep2Done=true;
     document.getElementById(id.cTxt).textContent=state.aiCorrected;
     document.getElementById(id.lbl).textContent='構造化整理結果';
     const sEl=document.getElementById(id.str); sEl.innerHTML='';
-    if(state.aiStructured&&typeof state.aiStructured==='object'){
-      const d={...state.aiStructured};delete d.corrected;
-      for(const[k,v] of Object.entries(d)){const row=document.createElement('div');row.className='ai-row';row.innerHTML=`<div class="ai-key">${escapeHtml(k)}</div><div class="ai-val">${formatValue(v)}</div>`;sEl.appendChild(row);}
-      sEl.style.display='block';
-    }
+    const d={...state.aiStructured};delete d.corrected;
+    for(const[k,v] of Object.entries(d)){const row=document.createElement('div');row.className='ai-row';row.innerHTML=`<div class="ai-key">${escapeHtml(k)}</div><div class="ai-val">${formatValue(v)}</div>`;sEl.appendChild(row);}
+    sEl.style.display='block';
     document.getElementById(id.res).classList.add('visible'); updateSave();
-  }catch(err){document.getElementById(id.proc).classList.remove('visible');showToast('AI処理失敗: '+err.message,'error');}
+  }catch(err){
+    document.getElementById(id.proc).classList.remove('visible');
+    showToast('AI処理失敗。もう一度②を押してください','error');
+    debugLog('Step2エラー: '+err.message);
+  }
 }
 
 // API call: まず全文で送信、失敗時にリトライ
@@ -897,13 +907,21 @@ function togglePlay(){if(!state.audioEl) return;if(state.audioEl.paused) state.a
 function deleteRec(){
   if(state.audioEl){try{state.audioEl.pause();state.audioEl.src='';}catch(e){}}
   if(state.audioUrl) URL.revokeObjectURL(state.audioUrl);
+  if(recognition){try{recognition.abort();}catch(e){}recognition=null;}
   state.audioBlob=null;state.audioUrl=null;state.audioEl=null;
   state.transcript='';state.interimTranscript='';state.aiCorrected='';state.aiStructured=null;state.aiStep1Done=false;state.aiStep2Done=false;
+  state.isRecording=false;
   ['playbackBar','liveTranscript','transcriptEdit','aiResult','aiProcessing'].forEach(x=>document.getElementById(x).classList.remove('visible'));
   document.getElementById('transcriptEditArea').value='';document.getElementById('aiCorrectedText').textContent='';
   document.getElementById('aiStructured').innerHTML='';document.getElementById('aiStructured').style.display='none';
   document.getElementById('aiEditArea').style.display='none';document.getElementById('liveText').textContent='';
-  document.getElementById('recLabel').textContent='タップして録音を開始';updateSave();
+  document.getElementById('recLabel').textContent='タップして録音を開始';
+  document.getElementById('recBtn').classList.remove('recording');
+  document.getElementById('recorder').classList.remove('is-recording');
+  document.getElementById('recLabel').classList.remove('active');
+  document.getElementById('recTimer').classList.remove('visible');
+  clearInterval(timerInt);stopWave();
+  updateSave();
 }
 
 // SAVE
@@ -1319,18 +1337,20 @@ function renderGenbaSelector(){
 }
 function renderDetailSelector(genba){
   const sel=document.getElementById('genbaDetailSelect');
+  const currentVal=state.activeDetail||sel.value;
   sel.innerHTML='<option value="">詳細を選択 / 新規入力...</option>';
   // マスターの詳細をデフォルト選択肢に
-  const details=genba.details||[];
+  const details=genba.details?[...genba.details]:[];
   if(genba.detail&&!details.includes(genba.detail)) details.unshift(genba.detail);
   const unique=[...new Set(details.filter(Boolean))];
   unique.forEach(d=>{const o=document.createElement('option');o.value=d;o.textContent=d;sel.appendChild(o);});
   // 「新規入力」オプション
   const newOpt=document.createElement('option');newOpt.value='__new__';newOpt.textContent='＋ 新しい詳細を入力';sel.appendChild(newOpt);
-  // 現在のactiveDetailをセット
-  if(state.activeDetail){
-    sel.value=state.activeDetail;
-    if(!sel.value){sel.value='__new__';document.getElementById('genbaDetailCustom').value=state.activeDetail;document.getElementById('genbaDetailCustom').style.display='block';}
+  // 現在のactiveDetailを復元
+  if(currentVal){
+    sel.value=currentVal;
+    if(sel.value===currentVal){state.activeDetail=currentVal;}
+    else{sel.value='__new__';document.getElementById('genbaDetailCustom').value=currentVal;document.getElementById('genbaDetailCustom').style.display='block';state.activeDetail=currentVal;}
   }
 }
 function onGenbaChange(){
