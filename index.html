@@ -28,7 +28,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
 .nav{position:sticky;top:0;z-index:100;background:rgba(20,20,22,.94);backdrop-filter:blur(24px);border-bottom:1px solid var(--border)}
 .nav-inner{max-width:520px;margin:0 auto;padding:14px 20px;display:flex;align-items:center;justify-content:space-between}
 .nav-brand{display:flex;align-items:center;gap:8px;cursor:pointer}
-.nav-logo{font-family:var(--fh);font-size:17px;font-weight:800;letter-spacing:2.5px;color:var(--primary);text-shadow:0 0 20px var(--primary-glow)}
+.nav-logo{font-family:var(--fh);font-size:14px;font-weight:800;letter-spacing:2.5px;color:var(--primary);text-shadow:0 0 20px var(--primary-glow);white-space:nowrap}
 .nav-rec{font-family:var(--fm);font-size:10px;font-weight:700;color:var(--red);letter-spacing:1px;display:flex;align-items:center;gap:4px}
 .nav-rec-dot{width:6px;height:6px;border-radius:50%;background:var(--red);box-shadow:0 0 8px var(--red);animation:recBlink 1.5s ease-in-out infinite}
 @keyframes recBlink{0%,80%,100%{opacity:1}40%{opacity:.2}}
@@ -351,7 +351,10 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
         <div class="transcript-edit" id="transcriptEdit">
           <div class="transcript-edit-label">文字起こし結果（編集可能）</div>
           <textarea class="text-area" id="transcriptEditArea" placeholder="音声認識の結果がここに表示されます。手動で修正もできます。"></textarea>
-          <div class="transcript-edit-hint">誤変換があれば修正してからAI処理を実行</div>
+          <div style="display:flex;gap:8px;align-items:center;margin-top:6px">
+            <div class="transcript-edit-hint" style="flex:1">誤変換があれば修正してからAI処理を実行</div>
+            <button onclick="insertPhotoMarker('transcriptEditArea')" style="padding:4px 10px;border-radius:6px;border:1.5px solid var(--primary);background:var(--primary-dim);color:var(--primary);font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap" id="insertMarkerBtnVoice">📷 挿入</button>
+          </div>
           <div class="ai-btns">
             <button class="ai-btn" onclick="runAIStep1('voice')">① テキスト修正</button>
             <button class="ai-btn s2" onclick="runAIStep2('voice')">② 構造化整理</button>
@@ -378,6 +381,10 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
     <!-- Text section -->
     <div class="manual-input-section" id="textSection">
       <textarea class="text-area" id="manualText" placeholder="メモをテキストで入力...&#10;例：砥石を交換した。目盛りは3.5に合わせた。"></textarea>
+      <div style="display:flex;gap:8px;align-items:center;margin:6px 0">
+        <button onclick="insertPhotoMarker('manualText')" style="padding:4px 10px;border-radius:6px;border:1.5px solid var(--primary);background:var(--primary-dim);color:var(--primary);font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap">📷 挿入</button>
+        <div style="font-size:10px;color:var(--text-dim)">カーソル位置に写真マーカーを挿入</div>
+      </div>
       <div class="ai-btns">
         <button class="ai-btn" onclick="runAIStep1('text')">① テキスト修正</button>
         <button class="ai-btn s2" onclick="runAIStep2('text')">② 構造化整理</button>
@@ -459,9 +466,19 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
     <div class="settings-group" style="margin-top:20px">
       <div class="settings-group-title">用語辞書</div>
       <div class="setting-row">
-        <div class="setting-desc">AIの誤変換修正ヒントになる専門用語を登録します。</div>
+        <div class="setting-desc">AIの誤変換修正・構造化のヒントになる用語を登録します。</div>
+        <div style="font-size:11px;color:var(--text-dim);line-height:1.7;margin:8px 0;padding:10px 12px;background:var(--surface2);border-radius:8px">
+          <div style="font-weight:600;color:var(--amber);margin-bottom:4px">💡 登録のコツ</div>
+          <div>単語だけでもOK！まずは登録して、誤変換が直らなければ補足を足す</div>
+          <div style="margin-top:6px;font-weight:600;color:var(--text-dim)">▼ より効果的な書き方</div>
+          <div>• 読み方を添える → <span style="color:var(--text)">砥石（といし）</span></div>
+          <div>• 略語の正式名 → <span style="color:var(--text)">SKS（エスケーエス、鋼材名）</span></div>
+          <div>• 社内用語の意味 → <span style="color:var(--text)">刃ラップ＝仕上げ研ぎ</span></div>
+          <div>• 補足説明 → <span style="color:var(--text)">SKS（後にサイズmmが続く）</span></div>
+          <div>• 機械の正式名 → <span style="color:var(--text)">A-1号機（ロータリー研削機）</span></div>
+        </div>
         <div class="dict-input-row">
-          <input class="dict-input" id="dictInput" type="text" placeholder="専門用語を入力...">
+          <input class="dict-input" id="dictInput" type="text" placeholder="例: SKS（エスケーエス、鋼材名）">
           <button class="dict-add-btn" onclick="addDictWord()">追加</button>
         </div>
         <div class="dict-list" id="dictList"></div>
@@ -499,37 +516,47 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
     <div class="modal-meta" id="modalMeta"></div>
     <!-- 追記エリア -->
     <div id="modalAppendArea" style="display:none;margin-top:12px">
-      <div style="font-size:11px;color:var(--text-dim);margin-bottom:8px;font-weight:600">追記内容を入力</div>
-      <div style="position:relative">
-        <textarea class="text-area" id="modalAppendText" placeholder="追記内容を入力...&#10;例：原因はたぶん○○だった。次回は△△する。" style="min-height:80px;font-size:13px;padding-right:44px"></textarea>
-        <button onclick="toggleAppendVoice()" id="appendVoiceBtn" style="position:absolute;right:8px;top:8px;width:36px;height:36px;border-radius:50%;border:1.5px solid var(--primary);background:var(--primary-dim);color:var(--primary);cursor:pointer;font-size:16px" title="音声入力">🎤</button>
-      </div>
-      <div id="appendVoiceIndicator" style="display:none;font-size:10px;color:var(--primary);margin-top:4px;font-weight:600">🔴 音声入力中...</div>
-      <!-- 追記用写真 -->
-      <div style="margin-top:8px">
-        <button onclick="document.getElementById('appendPhotoInput').click()" style="padding:8px 14px;border-radius:8px;border:1.5px solid var(--border);background:var(--surface);color:var(--text-dim);font-size:12px;cursor:pointer">📷 写真を追加</button>
-        <input type="file" accept="image/*" id="appendPhotoInput" class="sr-only">
-        <div id="appendPhotoPreview" style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap"></div>
-      </div>
-      <div class="ai-btns" style="margin-top:10px">
-        <button class="ai-btn" onclick="appendAI_step1()">① テキスト修正</button>
-        <button class="ai-btn s2" onclick="appendAI_step2()">② 構造化整理</button>
-      </div>
-      <!-- AI処理中 -->
-      <div class="ai-processing" id="appendAIProcessing"><div class="ai-spinner"></div><div class="ai-processing-text" id="appendAIProcessingText">AI が処理しています...</div></div>
-      <!-- AI結果表示 -->
-      <div class="ai-result" id="appendAIResult">
-        <div class="ai-result-header"><div class="ai-chip">AI</div><div class="ai-label" id="appendAIResultLabel">修正結果</div></div>
-        <div class="ai-corrected-block" id="appendCorrectedBlock">
-          <div class="ai-corrected-label">修正済みテキスト</div>
-          <button class="ai-edit-btn" onclick="toggleAppendEdit()">編集</button>
-          <div class="ai-corrected-text" id="appendCorrectedText" onclick="toggleAppendEdit()" style="cursor:text"></div>
-          <textarea class="ai-edit-area" id="appendEditArea"></textarea>
+      <!-- Phase 1: 追記入力 -->
+      <div id="appendPhase1">
+        <div style="font-size:11px;color:var(--text-dim);margin-bottom:8px;font-weight:600">追記内容を入力</div>
+        <div style="position:relative">
+          <textarea class="text-area" id="modalAppendText" placeholder="追記内容を入力...&#10;例：原因はたぶん○○だった。次回は△△する。" style="min-height:80px;font-size:13px;padding-right:44px"></textarea>
+          <button onclick="toggleAppendVoice()" id="appendVoiceBtn" style="position:absolute;right:8px;top:8px;width:36px;height:36px;border-radius:50%;border:1.5px solid var(--primary);background:var(--primary-dim);color:var(--primary);cursor:pointer;font-size:16px" title="音声入力">🎤</button>
         </div>
-        <div class="ai-structured-block" id="appendStructuredBlock" style="display:none"></div>
+        <div id="appendVoiceIndicator" style="display:none;font-size:10px;color:var(--primary);margin-top:4px;font-weight:600">🔴 音声入力中...</div>
+        <!-- 追記用写真 -->
+        <div style="margin-top:8px">
+          <button onclick="document.getElementById('appendPhotoInput').click()" style="padding:8px 14px;border-radius:8px;border:1.5px solid var(--border);background:var(--surface);color:var(--text-dim);font-size:12px;cursor:pointer">📷 写真を追加</button>
+          <input type="file" accept="image/*" id="appendPhotoInput" class="sr-only">
+          <div id="appendPhotoPreview" style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap"></div>
+        </div>
+        <button class="ai-btn" onclick="appendMerge()" style="width:100%;margin-top:10px">追記する</button>
       </div>
-      <!-- 送信ボタン（AI処理後に表示） -->
-      <button class="ai-btn s2" id="appendSendBtn" onclick="appendSend()" style="width:100%;margin-top:10px;display:none">この内容で再送</button>
+      <!-- Phase 2: 結合結果の確認・AI処理・送信 -->
+      <div id="appendPhase2" style="display:none">
+        <div style="font-size:11px;color:var(--text-dim);margin-bottom:8px;font-weight:600">追記済みの内容（確認・編集できます）</div>
+        <textarea class="text-area" id="appendMergedText" style="min-height:100px;font-size:13px;line-height:1.6"></textarea>
+        <div class="ai-btns" style="margin-top:10px">
+          <button class="ai-btn" onclick="appendAI_step1()">① テキスト修正</button>
+          <button class="ai-btn s2" onclick="appendAI_step2()">② 構造化整理</button>
+        </div>
+        <!-- AI処理中 -->
+        <div class="ai-processing" id="appendAIProcessing"><div class="ai-spinner"></div><div class="ai-processing-text" id="appendAIProcessingText">AI が処理しています...</div></div>
+        <!-- AI結果表示 -->
+        <div class="ai-result" id="appendAIResult">
+          <div class="ai-result-header"><div class="ai-chip">AI</div><div class="ai-label" id="appendAIResultLabel">修正結果</div></div>
+          <div class="ai-corrected-block" id="appendCorrectedBlock">
+            <div class="ai-corrected-label">修正済みテキスト</div>
+            <button class="ai-edit-btn" onclick="toggleAppendEdit()">編集</button>
+            <div class="ai-corrected-text" id="appendCorrectedText" onclick="toggleAppendEdit()" style="cursor:text"></div>
+            <textarea class="ai-edit-area" id="appendEditArea"></textarea>
+          </div>
+          <div class="ai-structured-block" id="appendStructuredBlock" style="display:none"></div>
+        </div>
+        <!-- 送信ボタン -->
+        <button class="ai-btn s2" onclick="appendSend()" style="width:100%;margin-top:10px">送信する</button>
+        <button onclick="appendBackToPhase1()" style="width:100%;margin-top:6px;padding:10px;border-radius:8px;border:1px solid var(--border);background:transparent;color:var(--text-dim);font-size:12px;cursor:pointer">← 追記をやり直す</button>
+      </div>
     </div>
     <button class="modal-close" onclick="closeModal()">閉じる</button>
     <button class="modal-append-btn" onclick="toggleAppendArea()" style="width:100%;padding:14px;border-radius:10px;border:1px solid var(--amber);background:var(--amber-dim);color:var(--amber);font-family:var(--fb);font-size:14px;cursor:pointer;margin-top:8px">あとから追記・修正する</button>
@@ -570,7 +597,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
 
 <script>
 // ===== STATE =====
-const MAX_PHOTOS = 5;
+const MAX_PHOTOS = 10;
 let state = {
   photos:[], audioBlob:null, audioUrl:null, audioEl:null, stream:null,
   isRecording:false, seconds:0, transcript:'', interimTranscript:'',
@@ -682,13 +709,95 @@ document.getElementById('fileInput').addEventListener('change',e=>{
   const file=e.target.files[0]; if(!file) return;
   if(state.photos.length>=MAX_PHOTOS){showToast('写真は'+MAX_PHOTOS+'枚まで','error');return;}
   const r=new FileReader();
-  r.onload=ev=>{state.photos.push(ev.target.result);renderPhotoGrid();updateSave();};
+  r.onload=ev=>{
+    state.photos.push(ev.target.result);
+    const photoNum=state.photos.length;
+    // v12: 録音中なら文字起こしテキストにマーカー自動挿入
+    if(state.isRecording){
+      state.transcript+=' 📷'+photoNum+' ';
+      document.getElementById('liveText').innerHTML=escapeHtml(state.transcript)+(state.interimTranscript?' <span class="interim">'+escapeHtml(state.interimTranscript)+'</span>':'');
+      showToast('📷'+photoNum+' をテキストに挿入');
+    }
+    renderPhotoGrid();updateSave();
+  };
   r.readAsDataURL(file); e.target.value='';
 });
-function removePhoto(i){state.photos.splice(i,1);renderPhotoGrid();updateSave();}
+function removePhoto(i){
+  const removedNum=i+1;
+  state.photos.splice(i,1);
+  // マーカー番号を振り直す（テキスト内のマーカーも更新）
+  renumberPhotoMarkers();
+  renderPhotoGrid();updateSave();
+}
+// v12: カーソル位置に写真マーカーを挿入
+function insertPhotoMarker(textareaId){
+  if(state.photos.length===0){
+    showToast('先に写真を追加してください','error');
+    document.getElementById('fileInput').click();
+    return;
+  }
+  // 写真が1枚なら即挿入、複数なら選択
+  if(state.photos.length===1){
+    doInsertMarker(textareaId,1);
+  }else{
+    // 写真選択ポップアップ
+    const existing=document.getElementById('photoPickerOverlay');
+    if(existing) existing.remove();
+    const overlay=document.createElement('div');
+    overlay.id='photoPickerOverlay';
+    overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:400;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px)';
+    let html='<div style="background:var(--surface);border-radius:12px;padding:16px;max-width:320px;width:90%"><div style="font-size:13px;font-weight:600;margin-bottom:12px;color:var(--text)">挿入する写真を選択</div><div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px">';
+    state.photos.forEach((p,i)=>{
+      html+='<div onclick="doInsertMarker(\''+textareaId+'\','+(i+1)+');document.getElementById(\'photoPickerOverlay\').remove()" style="cursor:pointer;border-radius:8px;overflow:hidden;aspect-ratio:1;position:relative;border:2px solid var(--border)"><img src="'+p+'" style="width:100%;height:100%;object-fit:cover"><div style="position:absolute;bottom:2px;left:2px;background:rgba(0,0,0,.8);color:var(--primary);font-size:10px;padding:1px 5px;border-radius:4px;font-weight:700">📷'+(i+1)+'</div></div>';
+    });
+    html+='</div><button onclick="document.getElementById(\'photoPickerOverlay\').remove()" style="width:100%;margin-top:12px;padding:10px;border-radius:8px;border:1px solid var(--border);background:transparent;color:var(--text-dim);font-size:12px;cursor:pointer">キャンセル</button></div>';
+    overlay.innerHTML=html;
+    overlay.onclick=e=>{if(e.target===overlay) overlay.remove();};
+    document.body.appendChild(overlay);
+  }
+}
+function doInsertMarker(textareaId,num){
+  const ta=document.getElementById(textareaId);
+  if(!ta) return;
+  const pos=ta.selectionStart||ta.value.length;
+  const before=ta.value.substring(0,pos);
+  const after=ta.value.substring(pos);
+  const marker=' 📷'+num+' ';
+  ta.value=before+marker+after;
+  ta.selectionStart=ta.selectionEnd=pos+marker.length;
+  ta.focus();
+  showToast('📷'+num+' を挿入しました');
+}
+
+// v12: 写真マーカーの番号振り直し
+function renumberPhotoMarkers(){
+  const areas=['transcriptEditArea','manualText'];
+  areas.forEach(id=>{
+    const el=document.getElementById(id);
+    if(!el) return;
+    // 全マーカーを一旦プレースホルダに
+    let text=el.value;
+    text=text.replace(/📷\d+/g,m=>'__PHOTO_MARKER__');
+    // 順番に振り直し
+    let num=0;
+    text=text.replace(/__PHOTO_MARKER__/g,()=>{num++;return '📷'+num;});
+    el.value=text;
+  });
+  // stateのtranscriptとaiCorrectedも更新
+  if(state.transcript){
+    let t=state.transcript.replace(/📷\d+/g,'__PHOTO_MARKER__');
+    let n=0;t=t.replace(/__PHOTO_MARKER__/g,()=>{n++;return '📷'+n;});
+    state.transcript=t;
+  }
+  if(state.aiCorrected){
+    let t=state.aiCorrected.replace(/📷\d+/g,'__PHOTO_MARKER__');
+    let n=0;t=t.replace(/__PHOTO_MARKER__/g,()=>{n++;return '📷'+n;});
+    state.aiCorrected=t;
+  }
+}
 function renderPhotoGrid(){
   const g=document.getElementById('photoGrid'),c=document.getElementById('photoCount');g.innerHTML='';
-  state.photos.forEach((p,i)=>{const d=document.createElement('div');d.className='photo-grid-item';d.innerHTML=`<img src="${p}"><button class="photo-grid-remove" onclick="event.stopPropagation();removePhoto(${i})">✕</button>`;g.appendChild(d);});
+  state.photos.forEach((p,i)=>{const d=document.createElement('div');d.className='photo-grid-item';d.innerHTML=`<img src="${p}"><div style="position:absolute;bottom:4px;left:4px;background:rgba(0,0,0,.7);color:var(--primary);font-size:10px;padding:1px 6px;border-radius:4px;font-weight:700">📷${i+1}</div><button class="photo-grid-remove" onclick="event.stopPropagation();removePhoto(${i})">✕</button>`;g.appendChild(d);});
   if(state.photos.length<MAX_PHOTOS){const a=document.createElement('div');a.className='photo-add-btn';a.onclick=()=>document.getElementById('fileInput').click();a.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg><span>写真を追加</span>';g.appendChild(a);}
   if(state.photos.length>0){c.textContent='写真: '+state.photos.length+' / '+MAX_PHOTOS;c.style.display='block';}else{c.style.display='none';}
 }
@@ -799,7 +908,7 @@ async function runAIStep1(mode){
   const detailText=state.activeDetail||(genba?(genba.detail||''):'');
   const ctx=genba?`対象: ${genba.name}${genba.detail?'\n前提条件: '+genba.detail:''}${detailText&&detailText!==genba.detail?'\n作業箇所: '+detailText:''}\n`:'';
   const dict=dictWords?`専門用語: ${dictWords}\n`:'';
-  const sys=`あなたは音声メモのテキスト修正アシスタントです。\n${ctx}${dict}タスク: 音声認識の誤変換を修正し読みやすくする。内容は変えない。\nJSON形式のみで返す（バッククォート不要）:\n{"corrected":"修正後テキスト"}`;
+  const sys=`あなたは音声メモのテキスト修正アシスタントです。\n${ctx}${dict}タスク: 音声認識の誤変換を修正し読みやすくする。内容は変えない。\nテキスト中の📷1、📷2等の写真マーカーはそのまま位置を維持すること。\nJSON形式のみで返す（バッククォート不要）:\n{"corrected":"修正後テキスト"}`;
   try{
     const raw=await callAPI(sys,`音声メモ:\n${text}`);
     document.getElementById(id.proc).classList.remove('visible');
@@ -824,18 +933,29 @@ async function runAIStep2(mode){
   const genba=getActiveGenba();
   const detailText=state.activeDetail||(genba?(genba.detail||''):'');
   const ctx=genba?`対象: ${genba.name}${genba.detail?'\n前提条件: '+genba.detail:''}${detailText&&detailText!==genba.detail?'\n作業箇所: '+detailText:''}\n`:'';
+  // タイプ別ベースラインカテゴリ
+  const recType=state.recType||'日常記録';
+  let baseline='';
+  if(recType==='日常記録') baseline='\n## ベースラインカテゴリ（該当すれば優先的に使う）\n- 作業内容（何をしたか）\n- 数値・実績（数量、時間、設定値など）\n- 状態・状況（機械や環境の状態）';
+  else if(recType==='手順') baseline='\n## ベースラインカテゴリ（該当すれば優先的に使う）\n- 準備（必要な道具・材料・前提）\n- 手順（Step順の作業内容）\n- 注意点（やりがちなミス、安全上の留意）';
+  else if(recType==='トラブル') baseline='\n## ベースラインカテゴリ（該当すれば優先的に使う）\n- 現象（何が起きたか）\n- 原因（わかっていれば）\n- 対処（何をしたか）\n- 再発防止（次どうするか）';
+  else if(recType==='気づき') baseline='\n## ベースラインカテゴリ（該当すれば優先的に使う）\n- 気づいた点（事実）\n- 根拠・背景（なぜそう思ったか）\n- 提案・アクション（どうすべきか）';
+  
   const sys=`あなたは製造現場の音声記録を整理するアシスタントです。
 ${ctx}
 ## タスク
 話者が実況的に喋った内容を、要点ごとにカテゴリ分けして整理する。
+記録タイプ: ${recType}
+${baseline}
 
 ## ルール
-- カテゴリ名は内容に応じて自由に決める（目的,理由,作業内容,手順,設定値,結果,問題点,対処,注意点,改善案,次回TODO,補足 など）
-- カテゴリの数は内容に応じて柔軟に増減する。要点が多ければ多く、少なければ少なく。
-- 各カテゴリの値には要点を「・」区切りで列挙する。要約しすぎず、発言のポイントを簡潔に並べる。
-- 話者が時系列バラバラに喋っていても、最適な論理順に並べ直す。
-- 言い直しや重複は統合し、言い間違いは正す。
-- 各値はフラットな文字列のみ。入れ子オブジェクト/配列は禁止。
+- ベースラインカテゴリは内容に該当する場合に使う。該当しない場合は省略してよい
+- ベースライン以外の重要な情報は、適切なカテゴリ名を自由につけて追加する
+- カテゴリの数は内容に応じて柔軟に増減する
+- 各カテゴリの値には要点を「・」区切りで列挙する。要約しすぎず、発言のポイントを簡潔に並べる
+- 話者が時系列バラバラに喋っていても、最適な論理順に並べ直す
+- 言い直しや重複は統合し、言い間違いは正す
+- 各値はフラットな文字列のみ。入れ子オブジェクト/配列は禁止
 
 ## 出力形式（JSON、バッククォート不要）
 {"structured":{"カテゴリ名1":"・ポイント1\\n・ポイント2","カテゴリ名2":"・ポイント1\\n・ポイント2",...}}`;
@@ -1059,14 +1179,17 @@ function toggleAppendArea(){
     document.getElementById('modalAppendText').focus();
     appendPhotos=[];renderAppendPhotos();
     appendCorrected='';appendStructured=null;
+    document.getElementById('appendPhase1').style.display='block';
+    document.getElementById('appendPhase2').style.display='none';
     document.getElementById('appendAIResult').classList.remove('visible');
     document.getElementById('appendAIProcessing').classList.remove('visible');
     document.getElementById('appendStructuredBlock').style.display='none';
     document.getElementById('appendStructuredBlock').innerHTML='';
     document.getElementById('appendCorrectedText').textContent='';
     document.getElementById('appendEditArea').style.display='none';
-    document.getElementById('appendSendBtn').style.display='none';
     document.getElementById('appendAIResultLabel').textContent='修正結果';
+    document.getElementById('modalAppendText').value='';
+    document.getElementById('appendMergedText').value='';
   }
 }
 
@@ -1112,6 +1235,27 @@ function getAppendCombined_(){
   return {appendText,origText,isFromSearch,combined:origText+(appendText?'\n\n【追記】'+appendText:'')};
 }
 
+// 「追記する」→ 元テキストと結合してPhase2に進む（まだ送信しない）
+function appendMerge(){
+  const ctx=getAppendCombined_();
+  if(!ctx.appendText&&appendPhotos.length===0){showToast('追記内容を入力してください','error');return;}
+  // 結合テキストをPhase2のテキストエリアに表示
+  document.getElementById('appendMergedText').value=ctx.combined;
+  appendCorrected=ctx.combined;
+  // Phase切替
+  document.getElementById('appendPhase1').style.display='none';
+  document.getElementById('appendPhase2').style.display='block';
+  showToast('追記しました。内容を確認して送信してください');
+}
+
+// Phase1に戻る
+function appendBackToPhase1(){
+  document.getElementById('appendPhase1').style.display='block';
+  document.getElementById('appendPhase2').style.display='none';
+  document.getElementById('appendAIResult').classList.remove('visible');
+  appendCorrected='';appendStructured=null;
+}
+
 // 修正テキスト編集切替
 function toggleAppendEdit(){
   const txt=document.getElementById('appendCorrectedText'),ea=document.getElementById('appendEditArea');
@@ -1121,8 +1265,8 @@ function toggleAppendEdit(){
 
 // ① テキスト修正
 async function appendAI_step1(){
-  const ctx=getAppendCombined_();
-  if(!ctx.appendText){showToast('追記内容を入力してください','error');return;}
+  const text=document.getElementById('appendMergedText').value.trim();
+  if(!text){showToast('テキストがありません','error');return;}
   if(!state.apiKey.trim()){showToast('設定でAPIキーを入力','error');return;}
   
   document.getElementById('appendAIProcessing').classList.add('visible');
@@ -1134,13 +1278,13 @@ async function appendAI_step1(){
   const detailText=state.activeDetail||(genba?(genba.detail||''):'');
   const ctxStr=genba?`対象: ${genba.name}${genba.detail?'\n前提条件: '+genba.detail:''}${detailText&&detailText!==genba.detail?'\n作業箇所: '+detailText:''}\n`:'';
   const dict=dictWords?`専門用語: ${dictWords}\n`:'';
-  const sys=`あなたは音声メモのテキスト修正アシスタントです。\n${ctxStr}${dict}タスク: 音声認識の誤変換を修正し読みやすくする。内容は変えない。\nJSON形式のみで返す（バッククォート不要）:\n{"corrected":"修正後テキスト"}`;
+  const sys=`あなたは音声メモのテキスト修正アシスタントです。\n${ctxStr}${dict}タスク: 音声認識の誤変換を修正し読みやすくする。内容は変えない。\nテキスト中の📷1、📷2等の写真マーカーはそのまま位置を維持すること。\nJSON形式のみで返す（バッククォート不要）:\n{"corrected":"修正後テキスト"}`;
   
   try{
-    const raw=await callAPI(sys,`音声メモ:\n${ctx.combined}`);
+    const raw=await callAPI(sys,`音声メモ:\n${text}`);
     document.getElementById('appendAIProcessing').classList.remove('visible');
     let parsed;try{parsed=JSON.parse(raw.replace(/```json|```/g,'').trim());}catch(e){parsed={corrected:raw};}
-    appendCorrected=parsed.corrected||ctx.combined;
+    appendCorrected=parsed.corrected||text;
     appendStructured=null;
     document.getElementById('appendCorrectedText').textContent=appendCorrected;
     document.getElementById('appendStructuredBlock').style.display='none';
@@ -1148,8 +1292,6 @@ async function appendAI_step1(){
     document.getElementById('appendAIResultLabel').textContent='修正結果（編集可→②で構造化）';
     document.getElementById('appendEditArea').style.display='none';
     document.getElementById('appendAIResult').classList.add('visible');
-    document.getElementById('appendSendBtn').style.display='block';
-    document.getElementById('appendSendBtn').textContent='この内容で再送';
   }catch(err){
     document.getElementById('appendAIProcessing').classList.remove('visible');
     showToast('AI処理失敗: '+err.message,'error');
@@ -1162,8 +1304,7 @@ async function appendAI_step2(){
   const ea=document.getElementById('appendEditArea');
   if(ea&&ea.style.display!=='none'&&ea.value.trim()){text=ea.value.trim();appendCorrected=text;}
   if(!text){
-    const ctx=getAppendCombined_();
-    text=ctx.combined;
+    text=document.getElementById('appendMergedText').value.trim();
     if(!text){showToast('テキストを入力','error');return;}
   }
   if(!state.apiKey.trim()){showToast('設定でAPIキーを入力','error');return;}
@@ -1174,13 +1315,24 @@ async function appendAI_step2(){
   const genba=getActiveGenba();
   const detailText=state.activeDetail||(genba?(genba.detail||''):'');
   const ctxStr=genba?`対象: ${genba.name}${genba.detail?'\n前提条件: '+genba.detail:''}${detailText&&detailText!==genba.detail?'\n作業箇所: '+detailText:''}\n`:'';
+  // タイプ別ベースライン
+  const recType=state.recType||'日常記録';
+  let baseline='';
+  if(recType==='日常記録') baseline='\n## ベースラインカテゴリ（該当すれば優先的に使う）\n- 作業内容（何をしたか）\n- 数値・実績（数量、時間、設定値など）\n- 状態・状況（機械や環境の状態）';
+  else if(recType==='手順') baseline='\n## ベースラインカテゴリ（該当すれば優先的に使う）\n- 準備（必要な道具・材料・前提）\n- 手順（Step順の作業内容）\n- 注意点（やりがちなミス、安全上の留意）';
+  else if(recType==='トラブル') baseline='\n## ベースラインカテゴリ（該当すれば優先的に使う）\n- 現象（何が起きたか）\n- 原因（わかっていれば）\n- 対処（何をしたか）\n- 再発防止（次どうするか）';
+  else if(recType==='気づき') baseline='\n## ベースラインカテゴリ（該当すれば優先的に使う）\n- 気づいた点（事実）\n- 根拠・背景（なぜそう思ったか）\n- 提案・アクション（どうすべきか）';
+
   const sys=`あなたは製造現場の音声記録を整理するアシスタントです。
 ${ctxStr}
 ## タスク
 話者が実況的に喋った内容を、要点ごとにカテゴリ分けして整理する。
+記録タイプ: ${recType}
+${baseline}
 
 ## ルール
-- カテゴリ名は内容に応じて自由に決める
+- ベースラインカテゴリは内容に該当する場合に使う。該当しない場合は省略してよい
+- ベースライン以外の重要な情報は、適切なカテゴリ名を自由につけて追加する
 - カテゴリの数は内容に応じて柔軟に増減する
 - 各カテゴリの値には要点を「・」区切りで列挙する
 - 話者が時系列バラバラに喋っていても、最適な論理順に並べ直す
@@ -1212,8 +1364,6 @@ ${ctxStr}
       showToast('構造化に失敗しました','error');
     }
     document.getElementById('appendAIResult').classList.add('visible');
-    document.getElementById('appendSendBtn').style.display='block';
-    document.getElementById('appendSendBtn').textContent='この内容で再送';
   }catch(err){
     document.getElementById('appendAIProcessing').classList.remove('visible');
     showToast('AI処理失敗: '+err.message,'error');
@@ -1222,35 +1372,39 @@ ${ctxStr}
 
 // 送信
 async function appendSend(){
-  const ctx=getAppendCombined_();
+  const isFromSearch=(state.modalRecordIdx<0 && state.modalSearchRec);
+  const appendText=document.getElementById('modalAppendText').value.trim();
   // 編集エリアが開いていたら反映
   const ea=document.getElementById('appendEditArea');
   if(ea&&ea.style.display!=='none'&&ea.value.trim()) appendCorrected=ea.value.trim();
+  // mergedTextが手動編集されている場合はそちらを優先
+  const mergedVal=document.getElementById('appendMergedText').value.trim();
+  const correctedText=appendCorrected||mergedVal;
   
-  const correctedText=appendCorrected||ctx.combined;
+  if(!correctedText){showToast('送信する内容がありません','error');return;}
   
-  if(ctx.isFromSearch){
+  if(isFromSearch){
     const rowNum=state.modalSearchRec._row;
     if(!rowNum){showToast('行番号が不明です','error');return;}
     try{
       showToast('スプレッドシートを更新中...');
-      const payload={_action:'update_row',row:rowNum,corrected:correctedText,transcript:(state.modalSearchRec['元テキスト']||'')+(ctx.appendText?'\n\n【追記】'+ctx.appendText:'')};
+      const payload={_action:'update_row',row:rowNum,corrected:correctedText,transcript:(state.modalSearchRec['元テキスト']||'')+(appendText?'\n\n【追記】'+appendText:'')};
       if(appendStructured) payload.structured=JSON.stringify(appendStructured);
       if(appendPhotos.length>0) payload.appendPhotos=appendPhotos;
       const res=await fetch(state.gasUrl,{method:'POST',headers:{'Content-Type':'text/plain'},body:JSON.stringify(payload)});
       const result=await res.json();
-      if(result.success){closeModal();showToast('再送しました');runSearch();}
+      if(result.success){closeModal();showToast('送信しました');runSearch();}
       else showToast('更新失敗: '+(result.message||''),'error');
     }catch(err){showToast('通信エラー: '+err.message,'error');}
   }else{
     const rec=state.records[state.modalRecordIdx];
     rec.corrected=correctedText;
-    if(ctx.appendText) rec.transcript=(rec.transcript||'')+'\n\n【追記】'+ctx.appendText;
+    if(appendText) rec.transcript=(rec.transcript||'')+'\n\n【追記】'+appendText;
     if(appendStructured) rec.structured=appendStructured;
     if(appendPhotos.length>0) rec.photos=[...(rec.photos||[]),...appendPhotos];
     rec.syncStatus='pending';persistRecords();
     if(state.gasUrl) sendToSheet(rec);
-    closeModal();renderHistory();showToast('再送しました');
+    closeModal();renderHistory();showToast('送信しました');
   }
 }
 // DICT
@@ -1715,7 +1869,7 @@ async function generateReport(){
 
 // INIT
 renderDict();renderHistory();updateSave();renderGenbaSelector();
-debugLog('GENBA REC v11.0 初期化完了');
+debugLog('GENBA REC v12.0 初期化完了');
 debugLog('Speech: '+(state.speechSupported?'対応':'非対応'));
 // 起動時に対象マスター＋辞書をサーバーから同期
 if(state.gasUrl){setTimeout(loadGenbasFromServer,500);setTimeout(loadDictFromServer,800);}
