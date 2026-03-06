@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-<title>GENBA REC</title>
+<title>GENBA REC v13</title>
 <meta name="theme-color" content="#141416">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -284,10 +284,19 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 3a2.85 2.85 0 014 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
       </button>
     </div>
-    <div class="genba-detail-preview" id="genbaDetailPreview" style="display:none;margin-top:-10px;margin-bottom:14px;padding:0 16px"></div>
-    <div id="genbaDetailSelector" style="display:none;margin-top:-10px;margin-bottom:14px;padding:0 16px">
-      <input class="setting-input" id="genbaDetailInput2" type="text" list="genbaDetailList" placeholder="作業箇所・部位を入力（例: 分離槽、バーナー部）" style="font-size:13px;width:100%" oninput="state.activeDetail=this.value.trim()">
-      <datalist id="genbaDetailList"></datalist>
+    <!-- v13: 分類タブUI -->
+    <div id="categorySelector" style="display:none;margin-top:-10px;margin-bottom:14px;padding:0 16px">
+      <div style="font-size:10px;font-weight:600;color:var(--text-dim);letter-spacing:1px;margin-bottom:6px">分類</div>
+      <div id="categoryTabs" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px"></div>
+      <!-- 追加インライン入力 -->
+      <div id="categoryAddRow" style="display:none;margin-top:6px;display:flex;gap:6px;align-items:center">
+        <input id="categoryAddInput" type="text" placeholder="分類名を入力..." style="flex:1;padding:8px 10px;border-radius:8px;border:1.5px solid var(--primary);background:var(--surface2);color:var(--text);font-size:13px;font-family:var(--fb);outline:none"
+          onkeydown="if(event.key==='Enter') confirmAddCategory(); if(event.key==='Escape') cancelAddCategory()">
+        <button onclick="confirmAddCategory()" style="padding:8px 12px;border-radius:8px;border:none;background:var(--primary);color:#fff;font-size:13px;font-weight:700;cursor:pointer">✓</button>
+        <button onclick="cancelAddCategory()" style="padding:8px 12px;border-radius:8px;border:1px solid var(--border);background:transparent;color:var(--text-dim);font-size:13px;cursor:pointer">✕</button>
+      </div>
+      <!-- ステップ採番ヒント（手順タイプのみ） -->
+      <div id="categoryStepHint" style="display:none;font-size:10px;color:var(--text-dim);margin-top:4px">同じ対象＋分類でステップ番号が自動採番されます</div>
     </div>
 
     <!-- Record type -->
@@ -296,12 +305,6 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
       <button class="type-btn" id="typeProcedure" onclick="setRecType('手順')">手順</button>
       <button class="type-btn" id="typeTrouble" onclick="setRecType('トラブル')">トラブル</button>
       <button class="type-btn" id="typeNote" onclick="setRecType('気づき')">気づき</button>
-    </div>
-    <!-- Procedure name (shown only when type=手順) -->
-    <div id="procNameRow" style="display:none;margin-bottom:14px">
-      <input class="setting-input" id="procNameInput" type="text" list="procNameList" placeholder="手順名を入力（例：砥石交換、メンテナンス）" style="font-family:var(--fb);font-size:14px;width:100%" oninput="state.procedureName=this.value.trim()">
-      <datalist id="procNameList"></datalist>
-      <div style="font-size:10px;color:var(--text-dim);margin-top:4px">同じ対象＋手順名でステップ番号が自動採番されます</div>
     </div>
 
     <!-- Photos -->
@@ -429,7 +432,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
         <option value="トラブル">トラブル</option>
         <option value="気づき">気づき</option>
       </select>
-      <select class="search-filter-select" id="searchProcName"><option value="">手順名: すべて</option></select>
+      <select class="search-filter-select" id="searchProcName"><option value="">分類: すべて</option></select>
     </div>
     <div id="searchResults"><div class="search-empty">GAS URLを設定してからスプレッドシートを検索できます</div></div>
 
@@ -598,13 +601,13 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
 
 <script>
 // ===== STATE =====
-const MAX_PHOTOS = 10;
+const MAX_PHOTOS = 20;
 let state = {
   photos:[], audioBlob:null, audioUrl:null, audioEl:null, stream:null,
   isRecording:false, seconds:0, transcript:'', interimTranscript:'',
   aiCorrected:'', aiStructured:null, aiStep1Done:false, aiStep2Done:false,
   records:[], dictionary:[], genbas:[], activeGenbaId:null,
-  apiKey:'', gasUrl:'', recType:'日常記録', procedureName:'', activeDetail:'', mode:'voice',
+  apiKey:'', gasUrl:'', recType:'日常記録', category:'', mode:'voice',
   debugMode:false, speechSupported:false, historyFilter:'',
   debugTapCount:0, debugTapTimer:null, modalRecordIdx:-1, modalSearchRec:null,
 };
@@ -668,24 +671,67 @@ function setRecType(type){
   const cls={'日常記録':'t-daily','手順':'t-proc','トラブル':'t-trouble','気づき':'t-note'};
   document.querySelectorAll('.type-btn').forEach(b=>b.className='type-btn');
   const btn=document.getElementById(map[type]); if(btn) btn.classList.add(cls[type]);
-  // 手順名入力欄の表示切替
-  document.getElementById('procNameRow').style.display=type==='手順'?'block':'none';
-  if(type==='手順') renderProcNameSelector();
-  // 手順以外に切り替えた時は非表示にするだけ（値はstate.procedureNameに保持）
+  // 手順タイプのみ採番ヒントを表示
+  const hint=document.getElementById('categoryStepHint');
+  if(hint) hint.style.display=type==='手順'?'block':'none';
 }
 
-// v12: 手順名候補（datalist）
-function renderProcNameSelector(){
-  const dl=document.getElementById('procNameList');
-  dl.innerHTML='';
+// v13: 分類タブUI
+function renderCategoryTabs(){
+  const tabsEl=document.getElementById('categoryTabs');
+  if(!tabsEl) return;
+  tabsEl.innerHTML='';
   const genba=getActiveGenba();
-  const genbaName=genba?genba.name:'';
-  const pastNames=new Set();
-  state.records.forEach(r=>{
-    if(r.recType==='手順'&&r.procedureName&&r.context===genbaName) pastNames.add(r.procedureName);
+  if(!genba) return;
+
+  const categories=genba.categories||[];
+
+  // 既存分類タブ
+  categories.forEach(cat=>{
+    const name=cat.name||cat;
+    const btn=document.createElement('button');
+    btn.style.cssText='padding:7px 14px;border-radius:20px;border:1.5px solid '+(state.category===name?'var(--primary)':'var(--border)')+';background:'+(state.category===name?'var(--primary-dim)':'transparent')+';color:'+(state.category===name?'var(--primary)':'var(--text-mid)')+';font-size:13px;font-weight:600;cursor:pointer;font-family:var(--fb);white-space:nowrap;transition:all .15s';
+    btn.textContent=name;
+    btn.onclick=()=>{
+      state.category=state.category===name?'':name;
+      renderCategoryTabs();
+      const hint=document.getElementById('categoryStepHint');
+      if(hint) hint.style.display=state.recType==='手順'&&state.category?'block':'none';
+    };
+    tabsEl.appendChild(btn);
   });
-  pastNames.forEach(name=>{const o=document.createElement('option');o.value=name;dl.appendChild(o);});
-  if(state.procedureName) document.getElementById('procNameInput').value=state.procedureName;
+
+  // ＋ボタン
+  const addBtn=document.createElement('button');
+  addBtn.style.cssText='padding:7px 14px;border-radius:20px;border:1.5px dashed var(--border);background:transparent;color:var(--text-dim);font-size:13px;cursor:pointer;font-family:var(--fb);white-space:nowrap';
+  addBtn.textContent='＋ 追加';
+  addBtn.onclick=()=>showCategoryAddRow();
+  tabsEl.appendChild(addBtn);
+}
+
+function showCategoryAddRow(){
+  const row=document.getElementById('categoryAddRow');
+  if(row){row.style.display='flex';document.getElementById('categoryAddInput').value='';document.getElementById('categoryAddInput').focus();}
+}
+function cancelAddCategory(){
+  const row=document.getElementById('categoryAddRow');
+  if(row) row.style.display='none';
+}
+function confirmAddCategory(){
+  const input=document.getElementById('categoryAddInput');
+  const name=(input?input.value.trim():'');
+  if(!name) return;
+  const genba=getActiveGenba();
+  if(!genba) return;
+  if(!genba.categories) genba.categories=[];
+  if(!genba.categories.find(c=>(c.name||c)===name)){
+    genba.categories.push({name,precondition:''});
+    saveGenbas();
+    syncGenbaToServer(genba,'edit');
+  }
+  state.category=name;
+  cancelAddCategory();
+  renderCategoryTabs();
 }
 
 
@@ -892,8 +938,7 @@ async function runAIStep1(mode){
   if(id.pLbl) document.getElementById(id.pLbl).textContent='AI がテキスト修正中...';
   const dictWords=state.dictionary.join('、');
   const genba=getActiveGenba();
-  const detailText=state.activeDetail||(genba?(genba.detail||''):'');
-  const ctx=genba?`対象: ${genba.name}${genba.detail?'\n前提条件: '+genba.detail:''}${detailText&&detailText!==genba.detail?'\n作業箇所: '+detailText:''}\n`:'';
+  const ctx=genba?`対象: ${genba.name}${genba.precondition||genba.detail?'\n前提条件: '+(genba.precondition||genba.detail):''}${state.category?'\n分類: '+state.category:''}\n`:'';  // v13
   const dict=dictWords?`専門用語: ${dictWords}\n`:'';
   const sys=`あなたは音声メモのテキスト修正アシスタントです。\n${ctx}${dict}タスク: 音声認識の誤変換を修正し読みやすくする。内容は変えない。\nテキスト中の📷1、📷2等の写真マーカーはそのまま位置を維持すること。\nJSON形式のみで返す（バッククォート不要）:\n{"corrected":"修正後テキスト"}`;
   try{
@@ -918,8 +963,7 @@ async function runAIStep2(mode){
   document.getElementById(id.proc).classList.add('visible');
   if(id.pLbl) document.getElementById(id.pLbl).textContent='AI が構造化整理中...';
   const genba=getActiveGenba();
-  const detailText=state.activeDetail||(genba?(genba.detail||''):'');
-  const ctx=genba?`対象: ${genba.name}${genba.detail?'\n前提条件: '+genba.detail:''}${detailText&&detailText!==genba.detail?'\n作業箇所: '+detailText:''}\n`:'';
+  const ctx=genba?`対象: ${genba.name}${genba.precondition||genba.detail?'\n前提条件: '+(genba.precondition||genba.detail):''}${state.category?'\n分類: '+state.category:''}\n`:'';  // v13
   // タイプ別ベースラインカテゴリ
   const recType=state.recType||'日常記録';
   let baseline='';
@@ -1037,26 +1081,15 @@ function deleteRec(){
 function saveRecord(){
   if(state.isRecording){showToast('録音を停止してから保存','error');return;}
   let text=state.mode==='voice'?(document.getElementById('transcriptEditArea').value.trim()||state.transcript):document.getElementById('manualText').value.trim();
-  // P5
   if(text&&!state.aiCorrected&&!state.aiStructured){if(!confirm('AI処理を実行していません。このまま保存しますか？')) return;}
   const genba=getActiveGenba();
-  // v11: 選択された詳細を使用
-  const detail=state.activeDetail||(genba?(genba.detail||''):'');
-  const rec={id:Date.now(),photos:[...state.photos],transcript:text,corrected:state.aiCorrected||text,structured:state.aiStructured,genbaId:state.activeGenbaId||null,context:genba?genba.name:'',contextDetail:detail,recType:state.recType,procedureName:state.procedureName||'',timestamp:new Date().toISOString(),syncStatus:state.gasUrl?'pending':'na'};
+  const rec={id:Date.now(),photos:[...state.photos],transcript:text,corrected:state.aiCorrected||text,structured:state.aiStructured,genbaId:state.activeGenbaId||null,context:genba?genba.name:'',category:state.category||'',recType:state.recType,timestamp:new Date().toISOString(),syncStatus:state.gasUrl?'pending':'na'};
   state.records.unshift(rec);persistRecords();
-  // 新しい詳細をgenbaのdetailsリストに追加
-  if(genba&&detail){
-    if(!genba.details) genba.details=[];
-    if(!genba.details.includes(detail)){genba.details.push(detail);saveGenbas();syncGenbaToServer(genba,'edit');}
-  }
   if(state.gasUrl) sendToSheet(rec);
   resetRecord();showToast('保存しました');
 }
 function resetRecord(){
   state.photos=[];renderPhotoGrid();deleteRec();state.seconds=0;
-  state.procedureName='';document.getElementById('procNameInput').value='';
-  state.activeDetail='';
-  const di=document.getElementById('genbaDetailInput2');if(di) di.value='';
   document.getElementById('recTimer').textContent='00:00';document.getElementById('manualText').value='';
   ['aiResultManual','aiProcessingManual'].forEach(x=>document.getElementById(x).classList.remove('visible'));
   document.getElementById('aiCorrectedTextManual').textContent='';document.getElementById('aiStructuredManual').innerHTML='';
@@ -1126,7 +1159,7 @@ function renderHistory(){
     const sm={'sent':'<span class="sync-badge sync-sent">送信済</span>','pending':'<span class="sync-badge sync-pending">未送信</span>','failed':'<span class="sync-badge sync-failed">失敗</span><button class="resend-btn" onclick="event.stopPropagation();resendRecord('+ri+')">再送</button>','na':''};
     let tags='';
     if(gn) tags+=`<span class="history-tag" style="background:var(--amber-dim);color:var(--amber);border-color:rgba(232,168,32,.15)">${escapeHtml(gn)}</span>`;
-    if(rec.recType&&rec.recType!=='日常記録'){const cm={'手順':'amber','トラブル':'red','気づき':'green'};const c=cm[rec.recType]||'primary';tags+=`<span class="history-tag" style="background:var(--${c}-dim);color:var(--${c})">${escapeHtml(rec.recType)}${rec.procedureName?' / '+escapeHtml(rec.procedureName):''}</span>`;}
+    if(rec.recType&&rec.recType!=='日常記録'){const cm={'手順':'amber','トラブル':'red','気づき':'green'};const c=cm[rec.recType]||'primary';tags+=`<span class="history-tag" style="background:var(--${c}-dim);color:var(--${c})">${escapeHtml(rec.recType)}${rec.category?' / '+escapeHtml(rec.category):''}</span>`;}
     item.innerHTML=`${thumb}<div class="history-body"><div class="history-text">${escapeHtml(text)}</div><div class="history-meta">${ds} ${sm[ss]||''}</div><div class="history-tags">${tags}</div></div>`;
     list.appendChild(item);
   });
@@ -1142,7 +1175,7 @@ function openModal(idx){
   const sEl=document.getElementById('modalStructured'),aEl=document.getElementById('modalAi');sEl.innerHTML='';
   if(rec.structured){aEl.style.display='block';for(const[k,v] of Object.entries(rec.structured)){const row=document.createElement('div');row.className='ai-row';row.innerHTML=`<div class="ai-key">${escapeHtml(k)}</div><div class="ai-val">${formatValue(v)}</div>`;sEl.appendChild(row);}}else aEl.style.display='none';
   const dt=new Date(rec.timestamp);let meta=dt.toLocaleDateString('ja-JP')+' '+dt.toLocaleTimeString('ja-JP',{hour:'2-digit',minute:'2-digit'});
-  if(rec.context) meta+='  |  '+rec.context; if(rec.recType) meta+='  |  '+rec.recType; if(rec.procedureName) meta+=' / '+rec.procedureName;
+  if(rec.context) meta+='  |  '+rec.context; if(rec.recType) meta+='  |  '+rec.recType; if(rec.category) meta+=' / '+rec.category;
   document.getElementById('modalMeta').textContent=meta;
   document.querySelector('.modal-delete').style.display='block';
   document.querySelector('.modal-append-btn').style.display=rec.syncStatus==='sent'?'block':'none';
@@ -1263,8 +1296,7 @@ async function appendAI_step1(){
   
   const dictWords=state.dictionary.join('、');
   const genba=getActiveGenba();
-  const detailText=state.activeDetail||(genba?(genba.detail||''):'');
-  const ctxStr=genba?`対象: ${genba.name}${genba.detail?'\n前提条件: '+genba.detail:''}${detailText&&detailText!==genba.detail?'\n作業箇所: '+detailText:''}\n`:'';
+  const ctxStr=genba?`対象: ${genba.name}${genba.precondition||genba.detail?'\n前提条件: '+(genba.precondition||genba.detail):''}${state.category?'\n分類: '+state.category:''}\n`:'';  // v13
   const dict=dictWords?`専門用語: ${dictWords}\n`:'';
   const sys=`あなたは音声メモのテキスト修正アシスタントです。\n${ctxStr}${dict}タスク: 音声認識の誤変換を修正し読みやすくする。内容は変えない。\nテキスト中の📷1、📷2等の写真マーカーはそのまま位置を維持すること。\nJSON形式のみで返す（バッククォート不要）:\n{"corrected":"修正後テキスト"}`;
   
@@ -1301,8 +1333,7 @@ async function appendAI_step2(){
   document.getElementById('appendAIProcessingText').textContent='AI が構造化整理中...';
   
   const genba=getActiveGenba();
-  const detailText=state.activeDetail||(genba?(genba.detail||''):'');
-  const ctxStr=genba?`対象: ${genba.name}${genba.detail?'\n前提条件: '+genba.detail:''}${detailText&&detailText!==genba.detail?'\n作業箇所: '+detailText:''}\n`:'';
+  const ctxStr=genba?`対象: ${genba.name}${genba.precondition||genba.detail?'\n前提条件: '+(genba.precondition||genba.detail):''}${state.category?'\n分類: '+state.category:''}\n`:'';  // v13
   // タイプ別ベースライン
   const recType=state.recType||'日常記録';
   let baseline='';
@@ -1441,8 +1472,7 @@ async function sendToSheet(rec){
   const genba=state.genbas.find(g=>g.id===rec.genbaId);
   // genbaIdでの検索に失敗した場合はrec自体に保存済みの名前を使う
   const subject=genba?genba.name:(rec.context||'');
-  const subjectDetail=genba?(genba.detail||''):(rec.contextDetail||'');
-  const payload={subject:subject,subjectDetail:subjectDetail,type:rec.recType||'日常記録',procedureName:rec.procedureName||'',transcript:rec.transcript||'',corrected:rec.corrected||'',structured:rec.structured?JSON.stringify(rec.structured):'',photos:rec.photos||[]};
+  const payload={subject:genba?genba.name:(rec.context||''),subjectDetail:'',type:rec.recType||'日常記録',category:rec.category||'',transcript:rec.transcript||'',corrected:rec.corrected||'',structured:rec.structured?JSON.stringify(rec.structured):'',photos:rec.photos||[]};
   try{
     debugLog('シート送信中...');
     const res=await fetch(state.gasUrl,{method:'POST',headers:{'Content-Type':'text/plain'},body:JSON.stringify(payload)});
@@ -1465,32 +1495,21 @@ async function testGas(){
 function getActiveGenba(){if(!state.activeGenbaId) return null;return state.genbas.find(g=>g.id===state.activeGenbaId)||null;}
 function saveGenbas(){localStorage.setItem('gr_genbas',JSON.stringify(state.genbas));localStorage.setItem('gr_active_genba',state.activeGenbaId||'');}
 function renderGenbaSelector(){
-  const sel=document.getElementById('genbaSelect'),eb=document.getElementById('genbaEditBtn'),pv=document.getElementById('genbaDetailPreview'),ds=document.getElementById('genbaDetailSelector');
+  const sel=document.getElementById('genbaSelect'),eb=document.getElementById('genbaEditBtn');
+  const cs=document.getElementById('categorySelector');
   sel.innerHTML='<option value="">対象を選択...</option>';
   state.genbas.forEach(g=>{const o=document.createElement('option');o.value=g.id;o.textContent=g.name;if(g.id===state.activeGenbaId) o.selected=true;sel.appendChild(o);});
   const genba=getActiveGenba();eb.style.display=genba?'flex':'none';
-  if(genba){
-    // 詳細セレクターを表示
-    pv.style.display='none';
-    ds.style.display='block';
-    renderDetailSelector(genba);
-  }else{
-    pv.style.display='none';ds.style.display='none';
+  if(genba&&cs){
+    cs.style.display='block';
+    renderCategoryTabs();
+  }else if(cs){
+    cs.style.display='none';
   }
-}
-function renderDetailSelector(genba){
-  const dl=document.getElementById('genbaDetailList');
-  const input=document.getElementById('genbaDetailInput2');
-  dl.innerHTML='';
-  const details=genba.details?[...genba.details]:[];
-  if(genba.detail&&!details.includes(genba.detail)) details.unshift(genba.detail);
-  [...new Set(details.filter(Boolean))].forEach(d=>{const o=document.createElement('option');o.value=d;dl.appendChild(o);});
-  if(state.activeDetail) input.value=state.activeDetail;
 }
 function onGenbaChange(){
   const v=document.getElementById('genbaSelect').value;
-  state.activeGenbaId=v||null;state.activeDetail='';
-  const di=document.getElementById('genbaDetailInput2');if(di) di.value='';
+  state.activeGenbaId=v||null;state.category='';
   saveGenbas();renderGenbaSelector();
   if(v){const g=getActiveGenba();if(g) showToast('「'+g.name+'」に切替');}
 }
@@ -1508,31 +1527,30 @@ function saveGenba(){
   const name=document.getElementById('genbaNameInput').value.trim(),detail=document.getElementById('genbaDetailInput').value.trim();
   if(!name){showToast('対象名を入力','error');return;}
   if(genbaEditMode==='new'){
-    const g={id:'genba_'+Date.now(),name,detail,createdAt:new Date().toISOString()};
+    const g={id:'genba_'+Date.now(),name,precondition:detail,detail,categories:[],createdAt:new Date().toISOString()};
     state.genbas.push(g);state.activeGenbaId=g.id;
     saveGenbas();renderGenbaSelector();closeGenbaModal();showToast('「'+name+'」を開始');
-    // GASにも保存
     syncGenbaToServer(g,'new');
   } else {
     const g=getActiveGenba();
-    if(g){g.name=name;g.detail=detail;
+    if(g){g.name=name;g.precondition=detail;g.detail=detail;
       saveGenbas();renderGenbaSelector();closeGenbaModal();showToast('対象情報を更新');
       syncGenbaToServer(g,'edit');
     }
   }
 }
 
-// v10: 対象マスターをGASと同期
+// v13: 対象マスターをGASと同期
 async function syncGenbaToServer(genba,mode){
   if(!state.gasUrl) return;
   try{
     const res=await fetch(state.gasUrl,{method:'POST',headers:{'Content-Type':'text/plain'},
-      body:JSON.stringify({_action:'save_genba',id:genba.id,name:genba.name,detail:genba.detail||'',details:genba.details||[]})});
+      body:JSON.stringify({_action:'save_genba',id:genba.id,name:genba.name,precondition:genba.precondition||genba.detail||'',categories:genba.categories||[]})});
     const result=await res.json();
     if(result.success&&result.genba){
-      // サーバーからマージされたdetailsを反映
-      if(result.genba.details) genba.details=result.genba.details;
+      if(result.genba.categories) genba.categories=result.genba.categories;
       saveGenbas();
+      renderCategoryTabs();
       debugLog('対象マスター同期完了: '+genba.name);
     }
   }catch(err){debugLog('対象マスター同期エラー: '+err.message);}
@@ -1550,9 +1568,9 @@ async function loadGenbasFromServer(){
       serverGenbas.forEach(sg=>{
         if(!localIds.has(sg.id)){state.genbas.push(sg);}
         else{
-          // 既存のものはサーバーの名前・詳細で上書き
+          // 既存のものはサーバーの名前・前提条件・分類一覧で上書き
           const local=state.genbas.find(g=>g.id===sg.id);
-          if(local){local.name=sg.name;local.detail=sg.detail||'';}
+          if(local){local.name=sg.name;local.precondition=sg.precondition||'';local.detail=sg.precondition||'';local.categories=sg.categories||[];}
         }
       });
       // ローカルにだけあってサーバーにないもの → サーバーに送信
@@ -1613,7 +1631,7 @@ function escapeHtml(t){const d=document.createElement('div');d.textContent=t;ret
 function formatValue(v){if(v==null) return '';if(typeof v==='object'){if(Array.isArray(v)) return v.map(formatValue).join(', ');return Object.entries(v).map(([k,v2])=>escapeHtml(k)+': '+formatValue(v2)).join(' / ');}return escapeHtml(String(v)).replace(/\n/g,'<br>');}
 
 // ===== v10: SEARCH API =====
-let searchCache={subjects:[],types:[],procedureNames:[],loaded:false};
+let searchCache={subjects:[],types:[],categories:[],loaded:false};
 let searchSelectedRows=[]; // 選択されたレコードの行番号
 
 async function gasGet(params){
@@ -1639,7 +1657,7 @@ async function initSearchPage(){
     const data=await gasGet({action:'search',limit:'1'});
     searchCache.subjects=data.subjects||[];
     searchCache.types=data.types||[];
-    searchCache.procedureNames=data.procedureNames||[];
+    searchCache.categories=data.categories||data.procedureNames||[];
     searchCache.loaded=true;
     populateSearchFilters();
     if(document.querySelectorAll('.search-result-item').length===0){
@@ -1655,8 +1673,8 @@ function populateSearchFilters(){
   ss.innerHTML='<option value="">対象: すべて</option>';
   searchCache.subjects.forEach(s=>{const o=document.createElement('option');o.value=s;o.textContent=s;ss.appendChild(o);});
   const sp=document.getElementById('searchProcName');
-  sp.innerHTML='<option value="">手順名: すべて</option>';
-  searchCache.procedureNames.forEach(p=>{const o=document.createElement('option');o.value=p;o.textContent=p;sp.appendChild(o);});
+  sp.innerHTML='<option value="">分類: すべて</option>';
+  searchCache.categories.forEach(p=>{const o=document.createElement('option');o.value=p;o.textContent=p;sp.appendChild(o);});
 }
 
 async function runSearch(){
@@ -1669,7 +1687,7 @@ async function runSearch(){
   if(kw) params.keyword=kw;
   if(subj) params.subject=subj;
   if(type) params.type=type;
-  if(proc) params.procedureName=proc;
+  if(proc) params.category=proc;
   
   searchSelectedRows=[];
   updateSelectedCount();
@@ -1678,7 +1696,7 @@ async function runSearch(){
   try{
     const data=await gasGet(params);
     if(!searchCache.loaded){
-      searchCache.subjects=data.subjects||[];searchCache.procedureNames=data.procedureNames||[];searchCache.loaded=true;
+      searchCache.subjects=data.subjects||[];searchCache.categories=data.categories||data.procedureNames||[];searchCache.loaded=true;
       populateSearchFilters();
     }
     if(data.records.length===0){el.innerHTML='<div class="search-empty">該当する記録がありません</div>';return;}
@@ -1692,7 +1710,7 @@ async function runSearch(){
       const dt=rec['日時']||'';
       const subj=rec['対象']||'';
       const type=rec['タイプ']||'';
-      const proc=rec['手順名']||'';
+      const proc=rec['分類']||rec['手順名']||'';
       const step=rec['ステップ番号']||'';
       let meta=dt;
       if(subj) meta+=' | '+subj;
@@ -1780,7 +1798,8 @@ function openSearchModal(rec){
   let meta=rec['日時']||'';
   if(rec['対象']) meta+='  |  '+rec['対象'];
   if(rec['タイプ']) meta+='  |  '+rec['タイプ'];
-  if(rec['手順名']) meta+='  |  '+rec['手順名'];
+  const recCat=rec['分類']||rec['手順名']||'';
+  if(recCat) meta+='  |  '+recCat;
   if(rec['ステップ番号']) meta+=' Step'+rec['ステップ番号'];
   document.getElementById('modalMeta').textContent=meta;
   state.modalRecordIdx=-1;
@@ -1809,7 +1828,7 @@ async function generateReport(){
   const proc=document.getElementById('searchProcName').value;
   if(subj) params.subject=subj;
   if(type) params.type=type;
-  if(proc) params.procedureName=proc;
+  if(proc) params.category=proc;
   
   // 選択行がある場合はrows指定、なければフィルタ条件でレコード抽出
   if(searchSelectedRows.length>0){
@@ -1842,7 +1861,7 @@ async function generateReport(){
 
 // INIT
 renderDict();renderHistory();updateSave();renderGenbaSelector();
-debugLog('GENBA REC v12.0 初期化完了');
+debugLog('GENBA REC v13.0 初期化完了');
 debugLog('Speech: '+(state.speechSupported?'対応':'非対応'));
 // 起動時に対象マスター＋辞書をサーバーから同期
 if(state.gasUrl){setTimeout(loadGenbasFromServer,500);setTimeout(loadDictFromServer,800);}
