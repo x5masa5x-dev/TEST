@@ -286,10 +286,8 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
     </div>
     <div class="genba-detail-preview" id="genbaDetailPreview" style="display:none;margin-top:-10px;margin-bottom:14px;padding:0 16px"></div>
     <div id="genbaDetailSelector" style="display:none;margin-top:-10px;margin-bottom:14px;padding:0 16px">
-      <select class="search-filter-select" id="genbaDetailSelect" onchange="onDetailChange()" style="width:100%;margin-bottom:6px;font-size:13px">
-        <option value="">詳細を選択 / 新規入力...</option>
-      </select>
-      <input class="setting-input" id="genbaDetailCustom" type="text" placeholder="例: 分離槽（三層構造、オイルスキマー使用）" style="font-size:13px;display:none">
+      <input class="setting-input" id="genbaDetailInput2" type="text" list="genbaDetailList" placeholder="作業箇所・部位を入力（例: 分離槽、バーナー部）" style="font-size:13px;width:100%" oninput="state.activeDetail=this.value.trim()">
+      <datalist id="genbaDetailList"></datalist>
     </div>
 
     <!-- Record type -->
@@ -301,10 +299,8 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
     </div>
     <!-- Procedure name (shown only when type=手順) -->
     <div id="procNameRow" style="display:none;margin-bottom:14px">
-      <select class="search-filter-select" id="procNameSelect" onchange="onProcNameChange()" style="width:100%;margin-bottom:6px;font-size:13px">
-        <option value="">手順名を選択 / 新規入力...</option>
-      </select>
-      <input class="setting-input" id="procNameInput" type="text" placeholder="新しい手順名（例：砥石交換、メンテナンス）" style="font-family:var(--fb);font-size:14px;display:none">
+      <input class="setting-input" id="procNameInput" type="text" list="procNameList" placeholder="手順名を入力（例：砥石交換、メンテナンス）" style="font-family:var(--fb);font-size:14px;width:100%" oninput="state.procedureName=this.value.trim()">
+      <datalist id="procNameList"></datalist>
       <div style="font-size:10px;color:var(--text-dim);margin-top:4px">同じ対象＋手順名でステップ番号が自動採番されます</div>
     </div>
 
@@ -316,6 +312,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
         <span>写真を追加</span>
       </div>
     </div>
+    <div style="font-size:10px;color:var(--text-dim);margin-top:-8px;margin-bottom:12px">録音中でも撮影OK。テキスト内に自動で写真マーカーが入ります</div>
     <input type="file" accept="image/*" id="fileInput" class="sr-only">
 
     <!-- Input mode -->
@@ -338,6 +335,10 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
           </div>
         </div>
         <div class="wave-container" id="waveContainer"></div>
+        <!-- v12: 録音中のカメラボタン（録音中のみ表示） -->
+        <div id="recCameraRow" style="display:none;text-align:center;margin:-4px 0 8px">
+          <button onclick="document.getElementById('fileInput').click()" style="padding:10px 20px;border-radius:10px;border:1.5px solid var(--primary);background:var(--primary-dim);color:var(--primary);font-size:14px;font-weight:700;cursor:pointer;font-family:var(--fb)">📷 撮影</button>
+        </div>
         <div class="live-transcript" id="liveTranscript">
           <div class="live-transcript-label"><div class="pulse-dot"></div>LIVE TRANSCRIPT</div>
           <div class="live-transcript-text" id="liveText"></div>
@@ -672,37 +673,21 @@ function setRecType(type){
   if(type==='手順') renderProcNameSelector();
   // 手順以外に切り替えた時は非表示にするだけ（値はstate.procedureNameに保持）
 }
-document.getElementById('procNameInput').addEventListener('input',e=>{state.procedureName=e.target.value.trim();});
 
-// v11: 手順名ドロップダウン（対象に紐づいた手順名のみ表示）
+// v12: 手順名候補（datalist）
 function renderProcNameSelector(){
-  const sel=document.getElementById('procNameSelect');
-  const currentVal=state.procedureName||sel.value;
-  sel.innerHTML='<option value="">手順名を選択 / 新規入力...</option>';
-  // ローカル履歴から過去の手順名を収集（現在の対象に限定）
+  const dl=document.getElementById('procNameList');
+  dl.innerHTML='';
   const genba=getActiveGenba();
   const genbaName=genba?genba.name:'';
   const pastNames=new Set();
   state.records.forEach(r=>{
     if(r.recType==='手順'&&r.procedureName&&r.context===genbaName) pastNames.add(r.procedureName);
   });
-  // サーバーキャッシュは対象で絞れないので使わない（全件混ざるため）
-  pastNames.forEach(name=>{const o=document.createElement('option');o.value=name;o.textContent=name;sel.appendChild(o);});
-  const newOpt=document.createElement('option');newOpt.value='__new__';newOpt.textContent='＋ 新しい手順名を入力';sel.appendChild(newOpt);
-  // 現在の値を復元
-  if(currentVal){
-    sel.value=currentVal;
-    if(sel.value===currentVal){state.procedureName=currentVal;}
-    else{sel.value='__new__';document.getElementById('procNameInput').style.display='block';document.getElementById('procNameInput').value=currentVal;state.procedureName=currentVal;}
-  }
+  pastNames.forEach(name=>{const o=document.createElement('option');o.value=name;dl.appendChild(o);});
+  if(state.procedureName) document.getElementById('procNameInput').value=state.procedureName;
 }
-function onProcNameChange(){
-  const v=document.getElementById('procNameSelect').value;
-  const input=document.getElementById('procNameInput');
-  if(v==='__new__'){input.style.display='block';input.focus();state.procedureName='';}
-  else if(v){input.style.display='none';input.value='';state.procedureName=v;}
-  else{input.style.display='none';input.value='';state.procedureName='';}
-}
+
 
 // PHOTO
 document.getElementById('fileInput').addEventListener('change',e=>{
@@ -832,6 +817,7 @@ async function startRec(){
     };
     mediaRecorder.start(1000);
     state.isRecording=true; state.seconds=0; state.interimTranscript='';
+    document.getElementById('recCameraRow').style.display='block';
     const existing=document.getElementById('transcriptEditArea').value.trim();
     state.transcript=existing?existing+'\n':'';
     document.getElementById('recBtn').classList.add('recording');
@@ -851,6 +837,7 @@ async function startRec(){
 }
 function stopRec(){
   debugLog('録音停止');state.isRecording=false;clearInterval(timerInt);stopWave();
+  document.getElementById('recCameraRow').style.display='none';
   if(recognition){try{recognition.abort();}catch(e){}recognition=null;}
   if(mediaRecorder&&mediaRecorder.state!=='inactive') mediaRecorder.stop();
   if(state.stream){state.stream.getTracks().forEach(t=>t.stop());state.stream=null;}
@@ -956,6 +943,7 @@ ${baseline}
 - 話者が時系列バラバラに喋っていても、最適な論理順に並べ直す
 - 言い直しや重複は統合し、言い間違いは正す
 - 各値はフラットな文字列のみ。入れ子オブジェクト/配列は禁止
+- テキスト中の📷1、📷2等の写真マーカーは必ずそのまま維持し、適切なカテゴリの値に含める
 
 ## 出力形式（JSON、バッククォート不要）
 {"structured":{"カテゴリ名1":"・ポイント1\\n・ポイント2","カテゴリ名2":"・ポイント1\\n・ポイント2",...}}`;
@@ -1031,6 +1019,7 @@ function deleteRec(){
   state.audioBlob=null;state.audioUrl=null;state.audioEl=null;
   state.transcript='';state.interimTranscript='';state.aiCorrected='';state.aiStructured=null;state.aiStep1Done=false;state.aiStep2Done=false;
   state.isRecording=false;
+  document.getElementById('recCameraRow').style.display='none';
   ['playbackBar','liveTranscript','transcriptEdit','aiResult','aiProcessing'].forEach(x=>document.getElementById(x).classList.remove('visible'));
   document.getElementById('transcriptEditArea').value='';document.getElementById('aiCorrectedText').textContent='';
   document.getElementById('aiStructured').innerHTML='';document.getElementById('aiStructured').style.display='none';
@@ -1065,10 +1054,9 @@ function saveRecord(){
 }
 function resetRecord(){
   state.photos=[];renderPhotoGrid();deleteRec();state.seconds=0;
-  state.procedureName='';document.getElementById('procNameInput').value='';document.getElementById('procNameInput').style.display='none';document.getElementById('procNameSelect').value='';
+  state.procedureName='';document.getElementById('procNameInput').value='';
   state.activeDetail='';
-  const ds=document.getElementById('genbaDetailSelect');if(ds) ds.value='';
-  const dc=document.getElementById('genbaDetailCustom');if(dc){dc.value='';dc.style.display='none';}
+  const di=document.getElementById('genbaDetailInput2');if(di) di.value='';
   document.getElementById('recTimer').textContent='00:00';document.getElementById('manualText').value='';
   ['aiResultManual','aiProcessingManual'].forEach(x=>document.getElementById(x).classList.remove('visible'));
   document.getElementById('aiCorrectedTextManual').textContent='';document.getElementById('aiStructuredManual').innerHTML='';
@@ -1339,6 +1327,7 @@ ${baseline}
 - 言い直しや重複は統合し、言い間違いは正す
 - 【追記】の内容も元の内容と統合して整理する
 - 各値はフラットな文字列のみ
+- テキスト中の📷1、📷2等の写真マーカーは必ずそのまま維持し、適切なカテゴリの値に含める
 
 ## 出力形式（JSON、バッククォート不要）
 {"structured":{"カテゴリ名1":"・ポイント1\\n・ポイント2","カテゴリ名2":"・ポイント1\\n・ポイント2",...}}`;
@@ -1490,37 +1479,21 @@ function renderGenbaSelector(){
   }
 }
 function renderDetailSelector(genba){
-  const sel=document.getElementById('genbaDetailSelect');
-  const currentVal=state.activeDetail||sel.value;
-  sel.innerHTML='<option value="">詳細を選択 / 新規入力...</option>';
-  // マスターの詳細をデフォルト選択肢に
+  const dl=document.getElementById('genbaDetailList');
+  const input=document.getElementById('genbaDetailInput2');
+  dl.innerHTML='';
   const details=genba.details?[...genba.details]:[];
   if(genba.detail&&!details.includes(genba.detail)) details.unshift(genba.detail);
-  const unique=[...new Set(details.filter(Boolean))];
-  unique.forEach(d=>{const o=document.createElement('option');o.value=d;o.textContent=d;sel.appendChild(o);});
-  // 「新規入力」オプション
-  const newOpt=document.createElement('option');newOpt.value='__new__';newOpt.textContent='＋ 新しい詳細を入力';sel.appendChild(newOpt);
-  // 現在のactiveDetailを復元
-  if(currentVal){
-    sel.value=currentVal;
-    if(sel.value===currentVal){state.activeDetail=currentVal;}
-    else{sel.value='__new__';document.getElementById('genbaDetailCustom').value=currentVal;document.getElementById('genbaDetailCustom').style.display='block';state.activeDetail=currentVal;}
-  }
+  [...new Set(details.filter(Boolean))].forEach(d=>{const o=document.createElement('option');o.value=d;dl.appendChild(o);});
+  if(state.activeDetail) input.value=state.activeDetail;
 }
 function onGenbaChange(){
   const v=document.getElementById('genbaSelect').value;
   state.activeGenbaId=v||null;state.activeDetail='';
-  document.getElementById('genbaDetailCustom').value='';document.getElementById('genbaDetailCustom').style.display='none';
+  const di=document.getElementById('genbaDetailInput2');if(di) di.value='';
   saveGenbas();renderGenbaSelector();
   if(v){const g=getActiveGenba();if(g) showToast('「'+g.name+'」に切替');}
 }
-function onDetailChange(){
-  const v=document.getElementById('genbaDetailSelect').value;
-  const customInput=document.getElementById('genbaDetailCustom');
-  if(v==='__new__'){customInput.style.display='block';customInput.focus();state.activeDetail='';}
-  else{customInput.style.display='none';customInput.value='';state.activeDetail=v;}
-}
-document.getElementById('genbaDetailCustom').addEventListener('input',e=>{state.activeDetail=e.target.value.trim();});
 function openGenbaModal(mode){
   genbaEditMode=mode;
   document.getElementById('genbaModalTitle').textContent=mode==='new'?'新しい対象を登録':'対象を編集';
