@@ -1038,7 +1038,11 @@ async function runAIStep1(mode){
     document.getElementById(id.cTxt).textContent=state.aiCorrected;
     document.getElementById(id.str).style.display='none'; document.getElementById(id.str).innerHTML='';
     document.getElementById(id.lbl).textContent='修正結果（編集可→②で構造化）';
-    document.getElementById(id.res).classList.add('visible'); updateSave();
+    document.getElementById(id.res).classList.add('visible');
+    // チャット欄を表示
+    const chatRow1=document.getElementById(mode==='voice'?'aiChatRow':'aiChatRowManual');
+    if(chatRow1) chatRow1.style.display='flex';
+    updateSave();
   }catch(err){document.getElementById(id.proc).classList.remove('visible');showToast('AI処理失敗: '+err.message,'error');}
 }
 
