@@ -609,7 +609,7 @@ let state = {
   aiCorrected:'', aiStructured:null, aiStep1Done:false, aiStep2Done:false,
   records:[], dictionary:[], genbas:[], activeGenbaId:null,
   apiKey:'', gasUrl:'', recType:'日常記録', category:'', mode:'voice',
-  debugMode:false, speechSupported:false, historyFilter:'',
+  debugMode:false, speechSupported:false,
   debugTapCount:0, debugTapTimer:null, modalRecordIdx:-1, modalSearchRec:null,
 };
 try {
@@ -940,7 +940,8 @@ async function startRec(){
 function stopRec(){
   debugLog('録音停止');state.isRecording=false;clearInterval(timerInt);stopWave();
   document.getElementById('recCameraRow').style.display='none';
-  if(recognition){try{recognition.abort();}catch(e){}recognition=null;}
+  speechActive=false;
+  if(recognition){try{recognition.stop();}catch(e){}}
   if(mediaRecorder&&mediaRecorder.state!=='inactive') mediaRecorder.stop();
   if(state.stream){state.stream.getTracks().forEach(t=>t.stop());state.stream=null;}
   // P2: audio cleanup
@@ -955,37 +956,71 @@ function stopRec(){
   updateSave();
 }
 
-// SPEECH
+// SPEECH - シングルトンパターン（iOSではabort→new が不安定なため、インスタンスを使い回す）
+let speechActive=false;
+
 function startSpeechSafe(){
-  // 前のrecognitionが残っていたら必ずonend無効化→abort→null
+  speechActive=true;
+  // 既にインスタンスがあり動作中なら一旦stop（onendで再起動される）
   if(recognition){
-    try{recognition.onend=null;recognition.onerror=null;recognition.abort();}catch(e){}
-    recognition=null;
+    try{recognition.stop();}catch(e){}
+    // onendハンドラ内でspeechActive=trueなら自動再起動するので、少し待つ
+    const isIOS=/iPad|iPhone|iPod/.test(navigator.userAgent);
+    setTimeout(()=>{
+      if(!state.isRecording||!speechActive) return;
+      // onendで再起動されていない場合のフォールバック
+      startSpeech();
+    }, isIOS?1200:300);
+    return;
   }
-  // iOSは特に時間がかかるため1000ms待ってから起動
+  // 初回：少し待ってから起動（iOS対策）
   const isIOS=/iPad|iPhone|iPod/.test(navigator.userAgent);
-  const delay=isIOS?1000:50;
+  const delay=isIOS?500:50;
   setTimeout(()=>{
-    if(!state.isRecording) return; // 待っている間に録音が止まっていたら何もしない
+    if(!state.isRecording||!speechActive) return;
     startSpeech();
   }, delay);
 }
 
 function startSpeech(){
   if(!SpeechR) return;
-  recognition=new SpeechR(); recognition.lang='ja-JP'; recognition.interimResults=true;
-  const isIOS=/iPad|iPhone|iPod/.test(navigator.userAgent); recognition.continuous=!isIOS;
+  // インスタンスがなければ1回だけ生成
+  if(!recognition){
+    recognition=new SpeechR();
+    recognition.lang='ja-JP';
+    recognition.interimResults=true;
+    const isIOS=/iPad|iPhone|iPod/.test(navigator.userAgent);
+    recognition.continuous=!isIOS;
+    debugLog('SpeechRecognition インスタンス生成'+(isIOS?' (iOS: continuous=false)':''));
+  }
   document.getElementById('liveTranscript').classList.add('visible');
   document.getElementById('liveText').innerHTML=state.transcript?escapeHtml(state.transcript)+'<span class="interim">聴き取り中...</span>':'<span class="interim">聴き取り中...</span>';
   recognition.onresult=e=>{
+    if(!speechActive) return;
     let interim='',final='';
     for(let i=e.resultIndex;i<e.results.length;i++){const t=e.results[i][0].transcript;if(e.results[i].isFinal) final+=t; else interim+=t;}
     if(final) state.transcript+=final; state.interimTranscript=interim;
     document.getElementById('liveText').innerHTML=escapeHtml(state.transcript)+(interim?' <span class="interim">'+escapeHtml(interim)+'</span>':'');
   };
-  recognition.onerror=e=>{debugLog('音声認識エラー: '+e.error);if(e.error==='not-allowed') showToast('音声認識の権限がありません','error');};
-  recognition.onend=()=>{if(state.isRecording&&recognition){try{setTimeout(()=>{if(state.isRecording&&recognition) recognition.start();},200);}catch(e){}}};
-  try{recognition.start();}catch(e){debugLog('開始エラー: '+e.message);}
+  recognition.onerror=e=>{
+    debugLog('音声認識エラー: '+e.error);
+    if(e.error==='not-allowed') showToast('音声認識の権限がありません','error');
+    // aborted/no-speech はiOSで頻発するので無視（onendで再起動）
+  };
+  recognition.onend=()=>{
+    debugLog('音声認識onend (speechActive='+speechActive+', isRecording='+state.isRecording+')');
+    if(speechActive&&state.isRecording){
+      // iOSのcontinuous=false対応：終了後に自動再起動
+      setTimeout(()=>{
+        if(speechActive&&state.isRecording&&recognition){
+          try{recognition.start();debugLog('音声認識 自動再起動');}
+          catch(e){debugLog('再起動失敗: '+e.message);}
+        }
+      },300);
+    }
+  };
+  try{recognition.start();debugLog('音声認識 開始');}
+  catch(e){debugLog('開始エラー: '+e.message);}
 }
 
 // WAVE
@@ -1212,10 +1247,8 @@ function retakeRec(){
   if(mediaRecorder&&mediaRecorder.state!=='inactive'){try{mediaRecorder.stop();}catch(e){}}
   mediaRecorder=null; audioChunks=[];
   if(state.stream){try{state.stream.getTracks().forEach(t=>t.stop());}catch(e){}state.stream=null;}
-  if(recognition){
-    try{recognition.onend=null;recognition.abort();}catch(e){}
-    recognition=null;
-  }
+  speechActive=false;
+  if(recognition){try{recognition.stop();}catch(e){}}
   state.audioBlob=null;state.audioUrl=null;state.audioEl=null;
   state.transcript='';state.interimTranscript='';
   state.isRecording=false;
@@ -1255,8 +1288,9 @@ function deleteRec(){
   if(mediaRecorder&&mediaRecorder.state!=='inactive'){try{mediaRecorder.stop();}catch(e){}}
   mediaRecorder=null; audioChunks=[];
   if(state.stream){try{state.stream.getTracks().forEach(t=>t.stop());}catch(e){}state.stream=null;}
-  // recognitionをonend無効化してからabort（iOS再起動ループ防止）
-  if(recognition){try{recognition.onend=null;recognition.abort();}catch(e){}recognition=null;}
+  // recognitionはシングルトン。stopのみ（破棄しない）
+  speechActive=false;
+  if(recognition){try{recognition.stop();}catch(e){}}
   state.audioBlob=null;state.audioUrl=null;state.audioEl=null;
   state.transcript='';state.interimTranscript='';state.aiCorrected='';state.aiStructured=null;state.aiStep1Done=false;state.aiStep2Done=false;
   state.isRecording=false;state.seconds=0;
@@ -1330,306 +1364,13 @@ function updateSave(){
 document.getElementById('manualText')?.addEventListener('input',updateSave);
 document.getElementById('transcriptEditArea')?.addEventListener('input',updateSave);
 
-// HISTORY
-function renderHistory(){
-  const list=document.getElementById('historyList'),today=new Date().toDateString();
-  const gMap={};state.genbas.forEach(g=>{gMap[g.id]=g.name;});
-  const fOpts=[],seen=new Set();
-  state.records.forEach(r=>{const k=r.genbaId||r.context||'';if(!k||seen.has(k)) return;seen.add(k);fOpts.push({key:k,label:gMap[r.genbaId]||r.context||k});});
-  const af=state.historyFilter||'';
-  const filtered=af?state.records.filter(r=>(r.genbaId||r.context||'')===af):state.records;
-  document.getElementById('statTotal').textContent=filtered.length;
-  document.getElementById('statToday').textContent=filtered.filter(r=>new Date(r.timestamp).toDateString()===today).length;
-  document.getElementById('statPhotos').textContent=filtered.filter(r=>(r.photos||[]).length>0).length;
-  list.innerHTML='';
-  if(fOpts.length>0){
-    const fb=document.createElement('div');fb.style.cssText='display:flex;align-items:center;gap:10px;margin-bottom:14px';
-    const lb=document.createElement('span');lb.textContent='対象:';lb.style.cssText='font-size:12px;font-weight:600;color:var(--text-dim);white-space:nowrap';fb.appendChild(lb);
-    const sel=document.createElement('select');sel.style.cssText='flex:1;padding:8px 12px;border-radius:8px;background:var(--surface2);color:var(--text);border:1px solid var(--border);font-size:13px;font-family:inherit';
-    const o0=document.createElement('option');o0.value='';o0.textContent='すべて';o0.selected=!af;sel.appendChild(o0);
-    fOpts.forEach(opt=>{const o=document.createElement('option');o.value=opt.key;o.textContent=opt.label;o.selected=af===opt.key;sel.appendChild(o);});
-    sel.onchange=()=>{state.historyFilter=sel.value;renderHistory();};fb.appendChild(sel);list.appendChild(fb);
-  }
-  if(filtered.length===0){list.innerHTML+='<div class="empty-state"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0014 0"/></svg><p>まだ記録がありません<br>記録タブから最初のメモを追加しましょう</p></div>';return;}
-  filtered.forEach(rec=>{
-    const ri=state.records.indexOf(rec),item=document.createElement('div');item.className='history-item';item.onclick=()=>openModal(ri);
-    const dt=new Date(rec.timestamp),ds=`${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')} ${String(dt.getHours()).padStart(2,'0')}:${String(dt.getMinutes()).padStart(2,'0')}`;
-    const photos=rec.photos||[];
-    const thumb=photos.length>0?`<div style="position:relative;flex-shrink:0"><img class="history-thumb" src="${photos[0]}">${photos.length>1?`<span style="position:absolute;bottom:2px;right:2px;background:rgba(0,0,0,.7);color:#fff;font-size:9px;padding:1px 5px;border-radius:4px">+${photos.length-1}</span>`:''}</div>`:'<div class="history-thumb-empty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0014 0"/></svg></div>';
-    const text=rec.corrected||rec.transcript||'（メモなし）';
-    const gn=gMap[rec.genbaId]||rec.context||'';
-    const ss=rec.syncStatus||'na';
-    const sm={'sent':'<span class="sync-badge sync-sent">送信済</span>','pending':'<span class="sync-badge sync-pending">未送信</span>','failed':'<span class="sync-badge sync-failed">失敗</span><button class="resend-btn" onclick="event.stopPropagation();resendRecord('+ri+')">再送</button>','na':''};
-    let tags='';
-    if(gn) tags+=`<span class="history-tag" style="background:var(--amber-dim);color:var(--amber);border-color:rgba(232,168,32,.15)">${escapeHtml(gn)}</span>`;
-    if(rec.recType&&rec.recType!=='日常記録'){const cm={'手順':'amber','トラブル':'red','気づき':'green'};const c=cm[rec.recType]||'primary';tags+=`<span class="history-tag" style="background:var(--${c}-dim);color:var(--${c})">${escapeHtml(rec.recType)}${rec.category?' / '+escapeHtml(rec.category):''}</span>`;}
-    item.innerHTML=`${thumb}<div class="history-body"><div class="history-text">${escapeHtml(text)}</div><div class="history-meta">${ds} ${sm[ss]||''}</div><div class="history-tags">${tags}</div></div>`;
-    list.appendChild(item);
-  });
-}
-async function resendRecord(idx){const r=state.records[idx];if(!r) return;r.syncStatus='pending';persistRecords();await sendToSheet(r);renderHistory();}
+// (v13: renderHistory・openModal は履歴タブ削除に伴い削除済み)
 
-// MODAL
-function openModal(idx){
-  state.modalRecordIdx=idx;const rec=state.records[idx];
-  const ph=document.getElementById('modalPhotos'),photos=rec.photos||[];
-  if(photos.length>0){ph.innerHTML=photos.map((p,i)=>`<img src="${p}" style="width:100%;border-radius:8px;margin-bottom:8px">`).join('');ph.style.display='block';}else{ph.innerHTML='';ph.style.display='none';}
-  document.getElementById('modalText').textContent=rec.corrected||rec.transcript||'';
-  const sEl=document.getElementById('modalStructured'),aEl=document.getElementById('modalAi');sEl.innerHTML='';
-  if(rec.structured){aEl.style.display='block';for(const[k,v] of Object.entries(rec.structured)){const row=document.createElement('div');row.className='ai-row';row.innerHTML=`<div class="ai-key">${escapeHtml(k)}</div><div class="ai-val">${formatValue(v)}</div>`;sEl.appendChild(row);}}else aEl.style.display='none';
-  const dt=new Date(rec.timestamp);let meta=dt.toLocaleDateString('ja-JP')+' '+dt.toLocaleTimeString('ja-JP',{hour:'2-digit',minute:'2-digit'});
-  if(rec.context) meta+='  |  '+rec.context; if(rec.recType) meta+='  |  '+rec.recType; if(rec.category) meta+=' / '+rec.category;
-  document.getElementById('modalMeta').textContent=meta;
-  document.querySelector('.modal-delete').style.display='block';
-  document.querySelector('.modal-append-btn').style.display=rec.syncStatus==='sent'?'block':'none';
-  document.getElementById('modalAppendArea').style.display='none';
-  document.getElementById('modalAppendText').value='';
-  document.getElementById('modal').classList.add('open');document.body.style.overflow='hidden';
-}
+// MODAL (検索モーダル用の閉じる・削除のみ残す)
 function closeModal(){document.getElementById('modal').classList.remove('open');document.body.style.overflow='';}
 function deleteRecord(){if(state.modalRecordIdx<0) return;if(!confirm('この記録を削除しますか？')) return;state.records.splice(state.modalRecordIdx,1);persistRecords();closeModal();showToast('削除しました');}
 
-// v11: 追記・再送機能（記録タブと同じフロー）
-let appendPhotos=[];
-let appendVoiceRec=null;
-let appendCorrected='';
-let appendStructured=null;
-
-function toggleAppendArea(){
-  const area=document.getElementById('modalAppendArea');
-  const isHidden=area.style.display==='none';
-  area.style.display=isHidden?'block':'none';
-  if(isHidden){
-    document.getElementById('modalAppendText').focus();
-    appendPhotos=[];renderAppendPhotos();
-    appendCorrected='';appendStructured=null;
-    document.getElementById('appendPhase1').style.display='block';
-    document.getElementById('appendPhase2').style.display='none';
-    document.getElementById('appendAIResult').classList.remove('visible');
-    document.getElementById('appendAIProcessing').classList.remove('visible');
-    document.getElementById('appendStructuredBlock').style.display='none';
-    document.getElementById('appendStructuredBlock').innerHTML='';
-    document.getElementById('appendCorrectedText').textContent='';
-    document.getElementById('appendEditArea').style.display='none';
-    document.getElementById('appendAIResultLabel').textContent='修正結果';
-    document.getElementById('modalAppendText').value='';
-    document.getElementById('appendMergedText').value='';
-  }
-}
-
-// 追記用写真
-document.getElementById('appendPhotoInput').addEventListener('change',e=>{
-  const file=e.target.files[0];if(!file) return;
-  if(appendPhotos.length>=5){showToast('写真は5枚まで','error');return;}
-  const r=new FileReader();
-  r.onload=ev=>{appendPhotos.push(ev.target.result);renderAppendPhotos();};
-  r.readAsDataURL(file);e.target.value='';
-});
-function renderAppendPhotos(){
-  const el=document.getElementById('appendPhotoPreview');el.innerHTML='';
-  appendPhotos.forEach((p,i)=>{
-    const d=document.createElement('div');d.style.cssText='position:relative;width:60px;height:60px;border-radius:8px;overflow:hidden;flex-shrink:0';
-    d.innerHTML='<img src="'+p+'" style="width:100%;height:100%;object-fit:cover"><button onclick="appendPhotos.splice('+i+',1);renderAppendPhotos()" style="position:absolute;top:2px;right:2px;width:18px;height:18px;border-radius:50%;border:none;background:rgba(0,0,0,.7);color:#fff;font-size:10px;cursor:pointer">✕</button>';
-    el.appendChild(d);
-  });
-}
-
-// 追記用音声入力
-function toggleAppendVoice(){
-  const btn=document.getElementById('appendVoiceBtn');
-  const ind=document.getElementById('appendVoiceIndicator');
-  if(appendVoiceRec){appendVoiceRec.abort();appendVoiceRec=null;btn.style.background='var(--primary-dim)';ind.style.display='none';return;}
-  if(!SpeechR){showToast('音声入力非対応','error');return;}
-  const isIOS=/iPad|iPhone|iPod/.test(navigator.userAgent);
-  const sr=new SpeechR();sr.lang='ja-JP';sr.interimResults=true;sr.continuous=!isIOS;
-  const ta=document.getElementById('modalAppendText'),base=ta.value;
-  sr.onresult=e=>{let f='',interim='';for(let i=0;i<e.results.length;i++){if(e.results[i].isFinal) f+=e.results[i][0].transcript;else interim+=e.results[i][0].transcript;}ta.value=base+(f||'')+interim;};
-  sr.onerror=()=>{appendVoiceRec=null;btn.style.background='var(--primary-dim)';ind.style.display='none';};
-  sr.onend=()=>{appendVoiceRec=null;btn.style.background='var(--primary-dim)';ind.style.display='none';};
-  sr.start();appendVoiceRec=sr;btn.style.background='var(--red)';ind.style.display='block';
-}
-
-// 元テキスト+追記を結合
-function getAppendCombined_(){
-  const appendText=document.getElementById('modalAppendText').value.trim();
-  const isFromSearch=(state.modalRecordIdx<0 && state.modalSearchRec);
-  let origText='';
-  if(isFromSearch) origText=state.modalSearchRec['AI修正テキスト']||state.modalSearchRec['元テキスト']||'';
-  else if(state.modalRecordIdx>=0){const rec=state.records[state.modalRecordIdx];origText=rec.corrected||rec.transcript||'';}
-  return {appendText,origText,isFromSearch,combined:origText+(appendText?'\n\n【追記】'+appendText:'')};
-}
-
-// 「追記する」→ 元テキストと結合してPhase2に進む（まだ送信しない）
-function appendMerge(){
-  const ctx=getAppendCombined_();
-  if(!ctx.appendText&&appendPhotos.length===0){showToast('追記内容を入力してください','error');return;}
-  // 結合テキストをPhase2のテキストエリアに表示
-  document.getElementById('appendMergedText').value=ctx.combined;
-  appendCorrected=ctx.combined;
-  // Phase切替
-  document.getElementById('appendPhase1').style.display='none';
-  document.getElementById('appendPhase2').style.display='block';
-  showToast('追記しました。内容を確認して送信してください');
-}
-
-// Phase1に戻る
-function appendBackToPhase1(){
-  document.getElementById('appendPhase1').style.display='block';
-  document.getElementById('appendPhase2').style.display='none';
-  document.getElementById('appendAIResult').classList.remove('visible');
-  appendCorrected='';appendStructured=null;
-}
-
-// 修正テキスト編集切替
-function toggleAppendEdit(){
-  const txt=document.getElementById('appendCorrectedText'),ea=document.getElementById('appendEditArea');
-  if(ea.style.display==='none'||!ea.style.display){ea.value=appendCorrected;ea.style.display='block';txt.style.display='none';ea.focus();}
-  else{appendCorrected=ea.value.trim()||appendCorrected;txt.textContent=appendCorrected;ea.style.display='none';txt.style.display='block';}
-}
-
-// ① テキスト修正
-async function appendAI_step1(){
-  const text=document.getElementById('appendMergedText').value.trim();
-  if(!text){showToast('テキストがありません','error');return;}
-  if(!state.apiKey.trim()){showToast('設定でAPIキーを入力','error');return;}
-  
-  document.getElementById('appendAIProcessing').classList.add('visible');
-  document.getElementById('appendAIProcessingText').textContent='AI がテキスト修正中...';
-  document.getElementById('appendAIResult').classList.remove('visible');
-  
-  const dictWords=state.dictionary.join('、');
-  const genba=getActiveGenba();
-  const ctxStr=genba?`対象: ${genba.name}${genba.precondition||genba.detail?'\n前提条件: '+(genba.precondition||genba.detail):''}${state.category?'\n分類: '+state.category:''}\n`:'';  // v13
-  const dict=dictWords?`専門用語: ${dictWords}\n`:'';
-  const sys=`あなたは音声メモのテキスト修正アシスタントです。\n${ctxStr}${dict}タスク: 音声認識の誤変換を修正し読みやすくする。内容は変えない。\nテキスト中の📷1、📷2等の写真マーカーはそのまま位置を維持すること。\nJSON形式のみで返す（バッククォート不要）:\n{"corrected":"修正後テキスト"}`;
-  
-  try{
-    const raw=await callAPI(sys,`音声メモ:\n${text}`);
-    document.getElementById('appendAIProcessing').classList.remove('visible');
-    let parsed;try{parsed=JSON.parse(raw.replace(/```json|```/g,'').trim());}catch(e){parsed={corrected:raw};}
-    appendCorrected=parsed.corrected||text;
-    appendStructured=null;
-    document.getElementById('appendCorrectedText').textContent=appendCorrected;
-    document.getElementById('appendStructuredBlock').style.display='none';
-    document.getElementById('appendStructuredBlock').innerHTML='';
-    document.getElementById('appendAIResultLabel').textContent='修正結果（編集可→②で構造化）';
-    document.getElementById('appendEditArea').style.display='none';
-    document.getElementById('appendAIResult').classList.add('visible');
-  }catch(err){
-    document.getElementById('appendAIProcessing').classList.remove('visible');
-    showToast('AI処理失敗: '+err.message,'error');
-  }
-}
-
-// ② 構造化整理
-async function appendAI_step2(){
-  let text=appendCorrected;
-  const ea=document.getElementById('appendEditArea');
-  if(ea&&ea.style.display!=='none'&&ea.value.trim()){text=ea.value.trim();appendCorrected=text;}
-  if(!text){
-    text=document.getElementById('appendMergedText').value.trim();
-    if(!text){showToast('テキストを入力','error');return;}
-  }
-  if(!state.apiKey.trim()){showToast('設定でAPIキーを入力','error');return;}
-  
-  document.getElementById('appendAIProcessing').classList.add('visible');
-  document.getElementById('appendAIProcessingText').textContent='AI が構造化整理中...';
-  
-  const genba=getActiveGenba();
-  const ctxStr=genba?`対象: ${genba.name}${genba.precondition||genba.detail?'\n前提条件: '+(genba.precondition||genba.detail):''}${state.category?'\n分類: '+state.category:''}\n`:'';  // v13
-  // タイプ別ベースライン
-  const recType=state.recType||'日常記録';
-  let baseline='';
-  if(recType==='日常記録') baseline='\n## ベースラインカテゴリ（該当すれば優先的に使う）\n- 作業内容（何をしたか）\n- 数値・実績（数量、時間、設定値など）\n- 状態・状況（機械や環境の状態）';
-  else if(recType==='手順') baseline='\n## ベースラインカテゴリ（該当すれば優先的に使う）\n- 準備（必要な道具・材料・前提）\n- 手順（Step順の作業内容）\n- 注意点（やりがちなミス、安全上の留意）';
-  else if(recType==='トラブル') baseline='\n## ベースラインカテゴリ（該当すれば優先的に使う）\n- 現象（何が起きたか）\n- 原因（わかっていれば）\n- 対処（何をしたか）\n- 再発防止（次どうするか）';
-  else if(recType==='気づき') baseline='\n## ベースラインカテゴリ（該当すれば優先的に使う）\n- 気づいた点（事実）\n- 根拠・背景（なぜそう思ったか）\n- 提案・アクション（どうすべきか）';
-
-  const sys=`あなたは製造現場の音声記録を整理するアシスタントです。
-${ctxStr}
-## タスク
-話者が実況的に喋った内容を、要点ごとにカテゴリ分けして整理する。
-記録タイプ: ${recType}
-${baseline}
-
-## ルール
-- ベースラインカテゴリは内容に該当する場合に使う。該当しない場合は省略してよい
-- ベースライン以外の重要な情報は、適切なカテゴリ名を自由につけて追加する
-- カテゴリの数は内容に応じて柔軟に増減する
-- 各カテゴリの値には要点を「・」区切りで列挙する
-- 話者が時系列バラバラに喋っていても、最適な論理順に並べ直す
-- 言い直しや重複は統合し、言い間違いは正す
-- 【追記】の内容も元の内容と統合して整理する
-- 各値はフラットな文字列のみ
-- テキスト中の📷1、📷2等の写真マーカーは必ずそのまま維持し、適切なカテゴリの値に含める
-
-## 出力形式（JSON、バッククォート不要）
-{"structured":{"カテゴリ名1":"・ポイント1\\n・ポイント2","カテゴリ名2":"・ポイント1\\n・ポイント2",...}}`;
-  
-  try{
-    const raw=await callAPI(sys,`テキスト:\n${text}`);
-    document.getElementById('appendAIProcessing').classList.remove('visible');
-    let parsed;try{parsed=JSON.parse(raw.replace(/```json|```/g,'').trim());}catch(e){parsed=null;}
-    if(parsed&&parsed.structured){
-      appendStructured=parsed.structured;
-      // 構造化結果を表示（記録タブと同じ形式）
-      const sEl=document.getElementById('appendStructuredBlock');
-      sEl.innerHTML='';sEl.style.display='block';
-      for(const[k,v] of Object.entries(parsed.structured)){
-        const row=document.createElement('div');row.className='ai-row';
-        row.innerHTML='<div class="ai-key">'+escapeHtml(k)+'</div><div class="ai-val">'+formatValue(v)+'</div>';
-        sEl.appendChild(row);
-      }
-      document.getElementById('appendAIResultLabel').textContent='構造化整理結果';
-      if(!appendCorrected){appendCorrected=text;}
-      document.getElementById('appendCorrectedText').textContent=appendCorrected;
-    }else{
-      showToast('構造化に失敗しました','error');
-    }
-    document.getElementById('appendAIResult').classList.add('visible');
-  }catch(err){
-    document.getElementById('appendAIProcessing').classList.remove('visible');
-    showToast('AI処理失敗: '+err.message,'error');
-  }
-}
-
-// 送信
-async function appendSend(){
-  const isFromSearch=(state.modalRecordIdx<0 && state.modalSearchRec);
-  const appendText=document.getElementById('modalAppendText').value.trim();
-  // 編集エリアが開いていたら反映
-  const ea=document.getElementById('appendEditArea');
-  if(ea&&ea.style.display!=='none'&&ea.value.trim()) appendCorrected=ea.value.trim();
-  // mergedTextが手動編集されている場合はそちらを優先
-  const mergedVal=document.getElementById('appendMergedText').value.trim();
-  const correctedText=appendCorrected||mergedVal;
-  
-  if(!correctedText){showToast('送信する内容がありません','error');return;}
-  
-  if(isFromSearch){
-    const rowNum=state.modalSearchRec._row;
-    if(!rowNum){showToast('行番号が不明です','error');return;}
-    try{
-      showToast('スプレッドシートを更新中...');
-      const payload={_action:'update_row',row:rowNum,corrected:correctedText,transcript:(state.modalSearchRec['元テキスト']||'')+(appendText?'\n\n【追記】'+appendText:'')};
-      if(appendStructured) payload.structured=JSON.stringify(appendStructured);
-      if(appendPhotos.length>0) payload.appendPhotos=appendPhotos;
-      const res=await fetch(state.gasUrl,{method:'POST',headers:{'Content-Type':'text/plain'},body:JSON.stringify(payload)});
-      const result=await res.json();
-      if(result.success){closeModal();showToast('送信しました');runSearch();}
-      else showToast('更新失敗: '+(result.message||''),'error');
-    }catch(err){showToast('通信エラー: '+err.message,'error');}
-  }else{
-    const rec=state.records[state.modalRecordIdx];
-    rec.corrected=correctedText;
-    if(appendText) rec.transcript=(rec.transcript||'')+'\n\n【追記】'+appendText;
-    if(appendStructured) rec.structured=appendStructured;
-    if(appendPhotos.length>0) rec.photos=[...(rec.photos||[]),...appendPhotos];
-    rec.syncStatus='pending';persistRecords();
-    if(state.gasUrl) sendToSheet(rec);
-    closeModal();showToast('送信しました');runSearch();
-  }
-}
+// (v13: 旧追記UIは削除。検索モーダルの修正はmodalEditArea系を使用)
 // DICT
 function addDictWord(){const inp=document.getElementById('dictInput'),w=inp.value.trim();if(!w) return;if(state.dictionary.includes(w)){showToast('登録済み','info');return;}state.dictionary.push(w);localStorage.setItem('gr_dict',JSON.stringify(state.dictionary));inp.value='';renderDict();showToast('「'+w+'」を追加');syncDictToServer('save',w);}
 document.getElementById('dictInput').addEventListener('keydown',e=>{if(e.key==='Enter') addDictWord();});
@@ -1851,6 +1592,15 @@ async function gasGet(params){
   return data;
 }
 
+async function gasPost(payload){
+  if(!state.gasUrl){showToast('GAS URLを設定してください','error');throw new Error('No GAS URL');}
+  debugLog('POST: '+JSON.stringify(payload).substring(0,120));
+  const res=await fetch(state.gasUrl,{method:'POST',headers:{'Content-Type':'text/plain'},body:JSON.stringify(payload)});
+  const data=await res.json();
+  debugLog('POST結果: '+JSON.stringify(data).substring(0,150));
+  return data;
+}
+
 async function initSearchPage(){
   if(!state.gasUrl){
     document.getElementById('searchResults').innerHTML='<div class="search-empty">設定タブでGAS URLを入力してください</div>';
@@ -1996,7 +1746,7 @@ function openSearchModal(rec){
   }else aEl.style.display='none';
   // 写真
   const ph=document.getElementById('modalPhotos');
-  const photos=[rec['写真URL1'],rec['写真URL2'],rec['写真URL3'],rec['写真URL4'],rec['写真URL5']].filter(Boolean);
+  const photos=[];for(let i=1;i<=20;i++){const u=rec['写真URL'+i];if(u) photos.push(u);}
   if(photos.length>0){
     ph.innerHTML=photos.map(u=>'<a href="'+escapeHtml(u)+'" target="_blank" style="display:block;margin-bottom:8px;color:var(--primary);font-size:12px">📷 写真を開く</a>').join('');
     ph.style.display='block';
