@@ -966,8 +966,11 @@ async function startRec(){
     if(!existing) document.getElementById('transcriptEdit').classList.remove('visible');
     timerInt=setInterval(()=>{state.seconds++;document.getElementById('recTimer').textContent=fmtTime(state.seconds);},1000);
     startWave();
-    if(state.speechSupported) startSpeech();
-    else{document.getElementById('liveTranscript').classList.add('visible');document.getElementById('liveText').textContent='（自動文字起こし非対応）';}
+    // iOSは前のrecognitionセッションが完全終了するまで待ってから再起動
+    const isIOS=/iPad|iPhone|iPod/.test(navigator.userAgent);
+    if(state.speechSupported){
+      setTimeout(()=>{ if(state.isRecording) startSpeech(); }, isIOS ? 600 : 0);
+    } else{document.getElementById('liveTranscript').classList.add('visible');document.getElementById('liveText').textContent='（自動文字起こし非対応）';}
   }catch(err){debugLog('エラー: '+err.message);showToast('マイクへのアクセスを許可してください','error');}
 }
 function stopRec(){
@@ -1137,29 +1140,38 @@ async function runAIChat(mode){
   if(!state.apiKey.trim()){showToast('APIキーを設定してください','error');return;}
 
   const currentText=state.aiCorrected||'';
-  const currentStructured=state.aiStructured?JSON.stringify(state.aiStructured,null,2):'';
-  if(!currentText&&!currentStructured){showToast('先にAI処理を実行してください','error');return;}
+  if(!currentText){showToast('先にAI処理を実行してください','error');return;}
 
   document.getElementById(procId).style.display='flex';
 
   const genba=getActiveGenba();
   const ctx=genba?`対象: ${genba.name}${state.category?'\n分類: '+state.category:''}\n`:'';
-  const sys=`あなたは音声メモの整理アシスタントです。\n${ctx}現在のAI処理結果に対して、ユーザーの追加指示に従って修正・補完してください。\nJSON形式のみで返す（バッククォート不要）:\n{"corrected":"修正後テキスト（変更なければ現状維持）","structured":{"カテゴリ名":"内容",...}（構造化結果がある場合。ない場合はnull）}`;
 
-  const userMsg=`【現在の修正済みテキスト】\n${currentText}\n\n${currentStructured?'【現在の構造化結果】\n'+currentStructured+'\n\n':''}【追加指示】\n${instruction}`;
+  // Step2完了済みなら構造化も更新、Step1のみなら修正テキストだけ
+  const isStep2=state.aiStep2Done;
+  const currentStructured=isStep2&&state.aiStructured?JSON.stringify(state.aiStructured,null,2):'';
+
+  let sys,userMsg;
+  if(isStep2){
+    sys=`あなたは音声メモの整理アシスタントです。\n${ctx}現在の修正テキストと構造化結果に対して、ユーザーの追加指示に従って修正・補完してください。\nJSON形式のみで返す（バッククォート不要）:\n{"corrected":"修正後テキスト","structured":{"カテゴリ名":"内容",...}}`;
+    userMsg=`【修正済みテキスト】\n${currentText}\n\n【構造化結果】\n${currentStructured}\n\n【追加指示】\n${instruction}`;
+  }else{
+    sys=`あなたは音声メモのテキスト修正アシスタントです。\n${ctx}現在の修正テキストに対して、ユーザーの追加指示に従ってテキストのみ修正してください。構造化は行わないでください。\nJSON形式のみで返す（バッククォート不要）:\n{"corrected":"修正後テキスト"}`;
+    userMsg=`【修正済みテキスト】\n${currentText}\n\n【追加指示】\n${instruction}`;
+  }
 
   try{
     const raw=await callAPI(sys,userMsg);
     document.getElementById(procId).style.display='none';
     let parsed;
-    try{parsed=JSON.parse(raw.replace(/\`\`\`json|\`\`\`/g,'').trim());}
+    try{parsed=JSON.parse(raw.replace(/```json|```/g,'').trim());}
     catch(e){parsed={corrected:raw,structured:null};}
 
     if(parsed.corrected){
       state.aiCorrected=parsed.corrected;
       document.getElementById(id.cTxt).textContent=state.aiCorrected;
     }
-    if(parsed.structured){
+    if(isStep2&&parsed.structured){
       state.aiStructured=parsed.structured;
       const sEl=document.getElementById(id.str); sEl.innerHTML='';
       for(const[k,v] of Object.entries(parsed.structured)){
@@ -1218,7 +1230,10 @@ function togglePlay(){if(!state.audioEl) return;if(state.audioEl.paused) state.a
 function retakeRec(){
   if(state.audioEl){try{state.audioEl.pause();state.audioEl.src='';}catch(e){}}
   if(state.audioUrl) URL.revokeObjectURL(state.audioUrl);
-  if(recognition){try{recognition.abort();}catch(e){}recognition=null;}
+  if(recognition){
+    try{recognition.onend=null;recognition.abort();}catch(e){}
+    recognition=null;
+  }
   state.audioBlob=null;state.audioUrl=null;state.audioEl=null;
   state.transcript='';state.interimTranscript='';
   state.isRecording=false;
@@ -1254,7 +1269,7 @@ function clearAll(){
 function deleteRec(){
   if(state.audioEl){try{state.audioEl.pause();state.audioEl.src='';}catch(e){}}
   if(state.audioUrl) URL.revokeObjectURL(state.audioUrl);
-  if(recognition){try{recognition.abort();}catch(e){}recognition=null;}
+  if(recognition){try{recognition.onend=null;recognition.abort();}catch(e){}recognition=null;}
   state.audioBlob=null;state.audioUrl=null;state.audioEl=null;
   state.transcript='';state.interimTranscript='';state.aiCorrected='';state.aiStructured=null;state.aiStep1Done=false;state.aiStep2Done=false;
   state.isRecording=false;
