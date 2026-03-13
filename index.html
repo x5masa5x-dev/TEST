@@ -1274,8 +1274,39 @@ function clearAll(){
   if(state.photos.length>0||state.audioBlob||document.getElementById('transcriptEditArea').value.trim()){
     if(!confirm('録音・写真・AI結果をすべてクリアします。よろしいですか？')) return;
   }
-  // iOS Safari では SpeechRecognition の状態が残るため、リロードで完全リセット
-  location.reload();
+  // iOS Safari ではSpeechRecognitionの状態がプロセスレベルで残るため、
+  // recognitionインスタンスには触れず、UIとデータだけリセットする
+  if(state.isRecording) stopRec();
+  // 音声ファイル破棄
+  if(state.audioEl){try{state.audioEl.pause();state.audioEl.src='';}catch(e){}}
+  if(state.audioUrl) URL.revokeObjectURL(state.audioUrl);
+  state.audioBlob=null;state.audioUrl=null;state.audioEl=null;
+  // MediaRecorder破棄（recognition は触らない）
+  if(mediaRecorder&&mediaRecorder.state!=='inactive'){try{mediaRecorder.stop();}catch(e){}}
+  mediaRecorder=null; audioChunks=[];
+  if(state.stream){try{state.stream.getTracks().forEach(t=>t.stop());}catch(e){}state.stream=null;}
+  // データリセット
+  state.photos=[];
+  state.transcript='';state.interimTranscript='';
+  state.aiCorrected='';state.aiStructured=null;state.aiStep1Done=false;state.aiStep2Done=false;
+  state.isRecording=false;state.seconds=0;
+  // UIリセット
+  renderPhotoGrid();
+  document.getElementById('recCameraRow').style.display='none';
+  ['playbackBar','liveTranscript','transcriptEdit','aiResult','aiProcessing'].forEach(x=>document.getElementById(x).classList.remove('visible'));
+  document.getElementById('transcriptEditArea').value='';
+  document.getElementById('aiCorrectedText').textContent='';
+  document.getElementById('aiStructured').innerHTML='';document.getElementById('aiStructured').style.display='none';
+  document.getElementById('aiEditArea').style.display='none';
+  document.getElementById('liveText').textContent='';
+  document.getElementById('recLabel').textContent='タップして録音を開始';
+  document.getElementById('recBtn').classList.remove('recording');
+  document.getElementById('recorder').classList.remove('is-recording');
+  document.getElementById('recLabel').classList.remove('active');
+  document.getElementById('recTimer').classList.remove('visible');
+  clearInterval(timerInt);stopWave();
+  updateSave();
+  showToast('全てクリアしました');
 }
 
 // deleteRec: 内部用（全リセット。外部からはretakeRecかclearAllを使う）
