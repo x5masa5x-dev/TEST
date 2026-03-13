@@ -631,8 +631,14 @@ function debugLog(msg){
   if(state.debugMode){el.classList.add('visible');el.innerHTML+=`[${new Date().toLocaleTimeString('ja-JP')}] ${msg}<br>`;el.scrollTop=el.scrollHeight;}
 }
 
-// P1: auto-stop on background
-document.addEventListener('visibilitychange',()=>{if(document.hidden&&state.isRecording){debugLog('バックグラウンド→録音自動停止');stopRec();}});
+// P1: auto-stop on background + streamも解放（マイクインジケータ消去）
+document.addEventListener('visibilitychange',()=>{
+  if(document.hidden){
+    if(state.isRecording){debugLog('バックグラウンド→録音自動停止');stopRec();}
+    // マイクインジケータを消すためstreamを解放（次回startRecで再取得される）
+    if(state.stream){try{state.stream.getTracks().forEach(t=>t.stop());}catch(e){}state.stream=null;debugLog('バックグラウンド→マイク解放');}
+  }
+});
 
 // Hidden debug: logo 5-tap
 document.getElementById('navBrand').addEventListener('click',()=>{
@@ -945,10 +951,9 @@ async function startRec(){
 function stopRec(){
   debugLog('録音停止');state.isRecording=false;clearInterval(timerInt);stopWave();
   document.getElementById('recCameraRow').style.display='none';
-  // stopSpeech(): abort()でOS側リソース解放 + 新世代にインクリメント
+  // stopSpeech(): abort→null + 500ms後にstream解放
   stopSpeech();
   if(mediaRecorder&&mediaRecorder.state!=='inactive') mediaRecorder.stop();
-  // streamは止めない（iOS Safari: SpeechRecognitionのaudio-captureエラー防止）
   // P2: audio cleanup
   if(state.audioEl){try{state.audioEl.pause();state.audioEl.src='';}catch(e){}}
   if(state.audioUrl){URL.revokeObjectURL(state.audioUrl);state.audioUrl=null;}
@@ -1027,6 +1032,15 @@ function stopSpeech(){
     try{recognition.onend=null;recognition.onerror=null;recognition.onresult=null;recognition.abort();}catch(e){}
     recognition=null;
   }
+  // abort完了後にstreamを解放（マイクインジケータ消去）
+  // 次回startRecで再取得されるので安全
+  setTimeout(()=>{
+    if(!state.isRecording&&!speechActive&&state.stream){
+      try{state.stream.getTracks().forEach(t=>t.stop());}catch(e){}
+      state.stream=null;
+      debugLog('マイクストリーム解放');
+    }
+  },500);
 }
 
 // WAVE
@@ -1252,9 +1266,8 @@ function retakeRec(){
   if(state.audioUrl) URL.revokeObjectURL(state.audioUrl);
   if(mediaRecorder&&mediaRecorder.state!=='inactive'){try{mediaRecorder.stop();}catch(e){}}
   mediaRecorder=null; audioChunks=[];
-  // streamは止めない（iOS Safari対策）
+  // recognition + stream は stopSpeech() で解放
   stopSpeech();
-  // recognition には触らない（iOS Safari対策）
   state.audioBlob=null;state.audioUrl=null;state.audioEl=null;
   state.transcript='';state.interimTranscript='';
   state.isRecording=false;
@@ -1280,17 +1293,16 @@ function clearAll(){
   if(state.photos.length>0||state.audioBlob||document.getElementById('transcriptEditArea').value.trim()){
     if(!confirm('録音・写真・AI結果をすべてクリアします。よろしいですか？')) return;
   }
-  // 録音中ならstopRecで停止、非録音中でもrecognitionをクリーンアップ
+  // 録音中ならstopRecで停止、非録音中でもrecognition+streamをクリーンアップ
   if(state.isRecording) stopRec();
   else stopSpeech();
   // 音声ファイル破棄
   if(state.audioEl){try{state.audioEl.pause();state.audioEl.src='';}catch(e){}}
   if(state.audioUrl) URL.revokeObjectURL(state.audioUrl);
   state.audioBlob=null;state.audioUrl=null;state.audioEl=null;
-  // MediaRecorder破棄（recognition は触らない）
+  // MediaRecorder破棄
   if(mediaRecorder&&mediaRecorder.state!=='inactive'){try{mediaRecorder.stop();}catch(e){}}
   mediaRecorder=null; audioChunks=[];
-  // streamは止めない（iOS Safari対策）
   // データリセット
   state.photos=[];
   state.transcript='';state.interimTranscript='';
@@ -1319,11 +1331,9 @@ function clearAll(){
 function deleteRec(){
   if(state.audioEl){try{state.audioEl.pause();state.audioEl.src='';}catch(e){}}
   if(state.audioUrl) URL.revokeObjectURL(state.audioUrl);
-  // mediaRecorderとstreamを確実に停止・破棄
   if(mediaRecorder&&mediaRecorder.state!=='inactive'){try{mediaRecorder.stop();}catch(e){}}
   mediaRecorder=null; audioChunks=[];
-  // streamは止めない（iOS Safari対策）
-  // recognition には触らない（iOS Safari対策）
+  // recognition + stream は stopSpeech() で解放
   stopSpeech();
   state.audioBlob=null;state.audioUrl=null;state.audioEl=null;
   state.transcript='';state.interimTranscript='';state.aiCorrected='';state.aiStructured=null;state.aiStep1Done=false;state.aiStep2Done=false;
@@ -1601,7 +1611,7 @@ function toggleVoiceInput(tid,bid){
   sr.onerror=e=>{cleanupVI(bid,tid);if(e.error==='not-allowed') showToast('マイク権限なし','error');};
   try{sr.start();}catch(e){cleanupVI(bid,tid);}
 }
-function stopVoiceInput(){if(settingsRec){try{settingsRec.abort();}catch(e){}settingsRec=null;}if(activeVBtn){const b=document.getElementById(activeVBtn);if(b) b.classList.remove('listening');activeVBtn=null;}document.querySelectorAll('[id^="voiceIndicator_"]').forEach(el=>{el.style.display='none';});}
+function stopVoiceInput(){if(settingsRec){try{settingsRec.onend=null;settingsRec.onerror=null;settingsRec.onresult=null;settingsRec.abort();}catch(e){}settingsRec=null;}if(activeVBtn){const b=document.getElementById(activeVBtn);if(b) b.classList.remove('listening');activeVBtn=null;}document.querySelectorAll('[id^="voiceIndicator_"]').forEach(el=>{el.style.display='none';});}
 function cleanupVI(bid,tid){const b=document.getElementById(bid);if(b) b.classList.remove('listening');settingsRec=null;activeVBtn=null;const ind=document.getElementById('voiceIndicator_'+tid);if(ind) setTimeout(()=>{ind.style.display='none';},1200);}
 
 // UTIL
