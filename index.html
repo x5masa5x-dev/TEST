@@ -137,6 +137,10 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
 .ai-corrected-block{background:var(--bg2);border-radius:var(--radius-sm);padding:14px;border:1px solid var(--border);margin-bottom:12px;position:relative}
 .ai-corrected-label{font-size:10px;font-weight:600;color:var(--text-dim);letter-spacing:1px;margin-bottom:6px}
 .ai-corrected-text{font-size:14px;line-height:1.7;color:var(--text)}
+.ai-chat-row{display:flex;gap:8px;margin-top:12px;padding-top:12px;border-top:1px solid var(--border)}
+.ai-chat-input{flex:1;padding:9px 12px;border-radius:10px;border:1.5px solid var(--border);background:var(--surface2);color:var(--text);font-size:13px;font-family:var(--fb);outline:none}
+.ai-chat-input:focus{border-color:var(--primary)}
+.ai-chat-btn{flex-shrink:0;padding:9px 16px;border-radius:10px;border:none;background:var(--primary);color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:var(--fb)}
 .ai-edit-btn{position:absolute;top:10px;right:10px;padding:4px 10px;border-radius:6px;border:1px solid var(--border);background:var(--surface2);color:var(--text-dim);font-size:11px;cursor:pointer;font-family:var(--fb)}
 .ai-edit-btn:hover{border-color:var(--primary);color:var(--primary)}
 .ai-edit-area{width:100%;min-height:60px;padding:10px;border-radius:8px;border:1.5px solid var(--primary);background:var(--bg);color:var(--text);font-family:var(--fb);font-size:14px;line-height:1.7;outline:none;resize:vertical;display:none}
@@ -404,6 +408,12 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
             <textarea class="ai-edit-area" id="aiEditArea"></textarea>
           </div>
           <div class="ai-structured-block" id="aiStructured" style="display:none"></div>
+          <!-- 追加指示チャット -->
+          <div class="ai-chat-row" id="aiChatRow" style="display:none">
+            <input class="ai-chat-input" id="aiChatInput" type="text" placeholder="例: この部分をもっと詳しく、箇条書きにして、手順を整理して...">
+            <button class="ai-chat-btn" onclick="runAIChat('voice')">送信</button>
+          </div>
+          <div class="ai-processing" id="aiProcessingChat" style="display:none;margin-top:8px"><div class="ai-spinner"></div><div class="ai-processing-text">AI が処理しています...</div></div>
         </div>
       </div>
     </div>
@@ -1101,11 +1111,66 @@ ${baseline}
     const d={...state.aiStructured};delete d.corrected;
     for(const[k,v] of Object.entries(d)){const row=document.createElement('div');row.className='ai-row';row.innerHTML=`<div class="ai-key">${escapeHtml(k)}</div><div class="ai-val">${formatValue(v)}</div>`;sEl.appendChild(row);}
     sEl.style.display='block';
-    document.getElementById(id.res).classList.add('visible'); updateSave();
+    document.getElementById(id.res).classList.add('visible');
+    // チャット欄を表示
+    const chatRow2=document.getElementById(mode==='voice'?'aiChatRow':'aiChatRowManual');
+    if(chatRow2) chatRow2.style.display='flex';
+    updateSave();
   }catch(err){
     document.getElementById(id.proc).classList.remove('visible');
     showToast('AI処理失敗。もう一度②を押してください','error');
     debugLog('Step2エラー: '+err.message);
+  }
+}
+
+// AI追加指示チャット
+async function runAIChat(mode){
+  const inputId=mode==='voice'?'aiChatInput':'aiChatInputManual';
+  const procId=mode==='voice'?'aiProcessingChat':'aiProcessingChatManual';
+  const id=ids(mode);
+  const instruction=document.getElementById(inputId).value.trim();
+  if(!instruction){showToast('指示を入力してください','error');return;}
+  if(!state.apiKey.trim()){showToast('APIキーを設定してください','error');return;}
+
+  const currentText=state.aiCorrected||'';
+  const currentStructured=state.aiStructured?JSON.stringify(state.aiStructured,null,2):'';
+  if(!currentText&&!currentStructured){showToast('先にAI処理を実行してください','error');return;}
+
+  document.getElementById(procId).style.display='flex';
+
+  const genba=getActiveGenba();
+  const ctx=genba?`対象: ${genba.name}${state.category?'\n分類: '+state.category:''}\n`:'';
+  const sys=`あなたは音声メモの整理アシスタントです。\n${ctx}現在のAI処理結果に対して、ユーザーの追加指示に従って修正・補完してください。\nJSON形式のみで返す（バッククォート不要）:\n{"corrected":"修正後テキスト（変更なければ現状維持）","structured":{"カテゴリ名":"内容",...}（構造化結果がある場合。ない場合はnull）}`;
+
+  const userMsg=`【現在の修正済みテキスト】\n${currentText}\n\n${currentStructured?'【現在の構造化結果】\n'+currentStructured+'\n\n':''}【追加指示】\n${instruction}`;
+
+  try{
+    const raw=await callAPI(sys,userMsg);
+    document.getElementById(procId).style.display='none';
+    let parsed;
+    try{parsed=JSON.parse(raw.replace(/\`\`\`json|\`\`\`/g,'').trim());}
+    catch(e){parsed={corrected:raw,structured:null};}
+
+    if(parsed.corrected){
+      state.aiCorrected=parsed.corrected;
+      document.getElementById(id.cTxt).textContent=state.aiCorrected;
+    }
+    if(parsed.structured){
+      state.aiStructured=parsed.structured;
+      const sEl=document.getElementById(id.str); sEl.innerHTML='';
+      for(const[k,v] of Object.entries(parsed.structured)){
+        const row=document.createElement('div');row.className='ai-row';
+        row.innerHTML=`<div class="ai-key">${escapeHtml(k)}</div><div class="ai-val">${formatValue(v)}</div>`;
+        sEl.appendChild(row);
+      }
+      sEl.style.display='block';
+    }
+    document.getElementById(inputId).value='';
+    showToast('修正しました');
+    updateSave();
+  }catch(err){
+    document.getElementById(procId).style.display='none';
+    showToast('AI処理失敗: '+err.message,'error');
   }
 }
 
@@ -1216,10 +1281,16 @@ function saveRecord(){
 }
 function resetRecord(){
   state.photos=[];renderPhotoGrid();deleteRec();state.seconds=0;
+  // AI stateを完全リセット（混入防止）
+  state.aiCorrected='';state.aiStructured=null;state.aiStep1Done=false;state.aiStep2Done=false;
   document.getElementById('recTimer').textContent='00:00';document.getElementById('manualText').value='';
   ['aiResultManual','aiProcessingManual'].forEach(x=>document.getElementById(x).classList.remove('visible'));
   document.getElementById('aiCorrectedTextManual').textContent='';document.getElementById('aiStructuredManual').innerHTML='';
   document.getElementById('aiStructuredManual').style.display='none';document.getElementById('aiEditAreaManual').style.display='none';
+  // チャット欄を非表示にリセット
+  ['aiChatRow','aiChatRowManual'].forEach(x=>{const el=document.getElementById(x);if(el)el.style.display='none';});
+  const ci1=document.getElementById('aiChatInput');if(ci1)ci1.value='';
+  const ci2=document.getElementById('aiChatInputManual');if(ci2)ci2.value='';
   updateSave();
 }
 function persistRecords(){
