@@ -268,7 +268,6 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
     </div>
     <div class="nav-tabs">
       <button class="nav-tab active" data-page="record">記録</button>
-      <button class="nav-tab" data-page="history">履歴</button>
       <button class="nav-tab" data-page="search">検索</button>
       <button class="nav-tab" data-page="settings">設定</button>
     </div>
@@ -443,16 +442,6 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
     </div>
   </div>
 
-  <!-- HISTORY PAGE -->
-  <div class="page" id="page-history">
-    <div class="history-stats">
-      <div class="stat-card"><div class="stat-num" id="statTotal">0</div><div class="stat-label">TOTAL</div></div>
-      <div class="stat-card"><div class="stat-num" id="statToday">0</div><div class="stat-label">TODAY</div></div>
-      <div class="stat-card"><div class="stat-num" id="statPhotos">0</div><div class="stat-label">PHOTOS</div></div>
-    </div>
-    <div id="historyList"></div>
-  </div>
-
   <!-- SEARCH PAGE -->
   <div class="page" id="page-search">
     <div class="search-bar">
@@ -470,12 +459,10 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
       </select>
       <select class="search-filter-select" id="searchProcName"><option value="">分類: すべて</option></select>
     </div>
-    <div id="searchResults"><div class="search-empty">GAS URLを設定してからスプレッドシートを検索できます</div></div>
-
-    <!-- Report Generation -->
+    <!-- Report Generation（検索結果の上に配置） -->
     <div class="report-section">
       <div class="report-title">📄 レポート生成</div>
-      <div style="font-size:12px;color:var(--text-dim);margin-bottom:12px;line-height:1.5">上の検索結果からレポートに含めるレコードを選択してください。未選択の場合はフィルタ条件に一致する全件が対象になります。</div>
+      <div style="font-size:12px;color:var(--text-dim);margin-bottom:12px;line-height:1.5">フィルタ条件で絞り込んだ結果をレポート化できます。下の検索結果からレコードを個別選択することも可能です。</div>
       <div id="reportSelectedCount" style="font-size:12px;font-weight:600;color:var(--primary);margin-bottom:10px;display:none"></div>
       <div class="report-row">
         <div class="report-label">タイトル</div>
@@ -484,6 +471,8 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
       <button class="report-btn" id="reportBtn" onclick="generateReport()">Google Docs + PDF を生成</button>
       <div id="reportResult" style="display:none"></div>
     </div>
+
+    <div id="searchResults"><div class="search-empty">GAS URLを設定してからスプレッドシートを検索できます</div></div>
   </div>
 
   <!-- SETTINGS PAGE -->
@@ -554,52 +543,28 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
       <div class="ai-structured-block" id="modalStructured"></div>
     </div>
     <div class="modal-meta" id="modalMeta"></div>
-    <!-- 追記エリア -->
-    <div id="modalAppendArea" style="display:none;margin-top:12px">
-      <!-- Phase 1: 追記入力 -->
-      <div id="appendPhase1">
-        <div style="font-size:11px;color:var(--text-dim);margin-bottom:8px;font-weight:600">追記内容を入力</div>
-        <div style="position:relative">
-          <textarea class="text-area" id="modalAppendText" placeholder="追記内容を入力...&#10;例：原因はたぶん○○だった。次回は△△する。" style="min-height:80px;font-size:13px;padding-right:44px"></textarea>
-          <button onclick="toggleAppendVoice()" id="appendVoiceBtn" style="position:absolute;right:8px;top:8px;width:36px;height:36px;border-radius:50%;border:1.5px solid var(--primary);background:var(--primary-dim);color:var(--primary);cursor:pointer;font-size:16px" title="音声入力">🎤</button>
+    <!-- AIチャット修正エリア -->
+    <div id="modalEditArea" style="display:none;margin-top:14px;border-top:1px solid var(--border);padding-top:14px">
+      <div style="font-size:11px;color:var(--text-dim);font-weight:600;margin-bottom:8px">✏️ AIチャットで修正・追記</div>
+      <!-- 現在のテキスト編集 -->
+      <textarea class="text-area" id="modalEditText" style="min-height:100px;font-size:13px;line-height:1.6" placeholder="テキストを直接編集できます..."></textarea>
+      <!-- チャット入力 -->
+      <div style="margin-top:8px">
+        <div style="font-size:11px;color:var(--text-dim);margin-bottom:6px">AIへの指示（任意）</div>
+        <div class="ai-chat-row" style="display:flex">
+          <input class="ai-chat-input" id="modalChatInput" type="text" placeholder="例: 手順をわかりやすく整理して、もっと詳しく...">
+          <button class="ai-chat-btn" onclick="runModalChat()">送信</button>
         </div>
-        <div id="appendVoiceIndicator" style="display:none;font-size:10px;color:var(--primary);margin-top:4px;font-weight:600">🔴 音声入力中...</div>
-        <!-- 追記用写真 -->
-        <div style="margin-top:8px">
-          <button onclick="document.getElementById('appendPhotoInput').click()" style="padding:8px 14px;border-radius:8px;border:1.5px solid var(--border);background:var(--surface);color:var(--text-dim);font-size:12px;cursor:pointer">📷 写真を追加</button>
-          <input type="file" accept="image/*" id="appendPhotoInput" class="sr-only">
-          <div id="appendPhotoPreview" style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap"></div>
-        </div>
-        <button class="ai-btn" onclick="appendMerge()" style="width:100%;margin-top:10px">追記する</button>
       </div>
-      <!-- Phase 2: 結合結果の確認・AI処理・送信 -->
-      <div id="appendPhase2" style="display:none">
-        <div style="font-size:11px;color:var(--text-dim);margin-bottom:8px;font-weight:600">追記済みの内容（確認・編集できます）</div>
-        <textarea class="text-area" id="appendMergedText" style="min-height:100px;font-size:13px;line-height:1.6"></textarea>
-        <div class="ai-btns" style="margin-top:10px">
-          <button class="ai-btn" onclick="appendAI_step1()">① テキスト修正</button>
-          <button class="ai-btn s2" onclick="appendAI_step2()">② 構造化整理</button>
-        </div>
-        <!-- AI処理中 -->
-        <div class="ai-processing" id="appendAIProcessing"><div class="ai-spinner"></div><div class="ai-processing-text" id="appendAIProcessingText">AI が処理しています...</div></div>
-        <!-- AI結果表示 -->
-        <div class="ai-result" id="appendAIResult">
-          <div class="ai-result-header"><div class="ai-chip">AI</div><div class="ai-label" id="appendAIResultLabel">修正結果</div></div>
-          <div class="ai-corrected-block" id="appendCorrectedBlock">
-            <div class="ai-corrected-label">修正済みテキスト</div>
-            <button class="ai-edit-btn" onclick="toggleAppendEdit()">編集</button>
-            <div class="ai-corrected-text" id="appendCorrectedText" onclick="toggleAppendEdit()" style="cursor:text"></div>
-            <textarea class="ai-edit-area" id="appendEditArea"></textarea>
-          </div>
-          <div class="ai-structured-block" id="appendStructuredBlock" style="display:none"></div>
-        </div>
-        <!-- 送信ボタン -->
-        <button class="ai-btn s2" onclick="appendSend()" style="width:100%;margin-top:10px">送信する</button>
-        <button onclick="appendBackToPhase1()" style="width:100%;margin-top:6px;padding:10px;border-radius:8px;border:1px solid var(--border);background:transparent;color:var(--text-dim);font-size:12px;cursor:pointer">← 追記をやり直す</button>
+      <!-- AI処理中 -->
+      <div id="modalChatProcessing" style="display:none;margin-top:8px;padding:10px;border-radius:8px;background:var(--surface2);font-size:12px;color:var(--primary)">
+        <div class="ai-spinner" style="display:inline-block;margin-right:6px"></div>AI が処理中...
       </div>
+      <!-- 保存ボタン -->
+      <button class="ai-btn s2" onclick="modalEditSave()" style="width:100%;margin-top:10px">スプレッドシートに保存</button>
     </div>
     <button class="modal-close" onclick="closeModal()">閉じる</button>
-    <button class="modal-append-btn" onclick="toggleAppendArea()" style="width:100%;padding:14px;border-radius:10px;border:1px solid var(--amber);background:var(--amber-dim);color:var(--amber);font-family:var(--fb);font-size:14px;cursor:pointer;margin-top:8px">あとから追記・修正する</button>
+    <button id="modalEditToggleBtn" onclick="toggleModalEdit()" style="width:100%;padding:14px;border-radius:10px;border:1px solid var(--amber);background:var(--amber-dim);color:var(--amber);font-family:var(--fb);font-size:14px;cursor:pointer;margin-top:8px">✏️ 修正・追記する</button>
     <button class="modal-delete" onclick="deleteRecord()">この記録を削除</button>
   </div>
 </div>
@@ -684,7 +649,7 @@ document.querySelectorAll('.nav-tab').forEach(tab=>{
     tab.classList.add('active');
     document.getElementById('page-'+tab.dataset.page).classList.add('active');
     document.getElementById('saveBar').style.display=tab.dataset.page==='record'?'block':'none';
-    if(tab.dataset.page==='history') renderHistory();
+    if(tab.dataset.page==='search') initSearch();
     if(tab.dataset.page==='settings'){loadSettings();renderDict();}
     if(tab.dataset.page==='search') initSearchPage();
   });
@@ -830,9 +795,10 @@ document.getElementById('fileInput').addEventListener('change',e=>{
   r.onload=ev=>{
     state.photos.push(ev.target.result);
     const photoNum=state.photos.length;
-    // v12: 録音中なら文字起こしテキストにマーカー自動挿入
+    // 録音中なら現在のテキスト末尾にマーカー自動挿入（interim含む確定済み部分の末尾）
     if(state.isRecording){
-      state.transcript+=' 📷'+photoNum+' ';
+      // interimが確定していない分は含めず、transcriptの末尾に入れる
+      state.transcript=(state.transcript.trimEnd())+' 📷'+photoNum+' ';
       document.getElementById('liveText').innerHTML=escapeHtml(state.transcript)+(state.interimTranscript?' <span class="interim">'+escapeHtml(state.interimTranscript)+'</span>':'');
       showToast('📷'+photoNum+' をテキストに挿入');
     }
@@ -991,15 +957,18 @@ function stopRec(){
 
 // SPEECH
 function startSpeechSafe(){
-  // 前のrecognitionが残っていたら終了を待ってから起動
+  // 前のrecognitionが残っていたら必ずonend無効化→abort→null
   if(recognition){
-    try{recognition.onend=null;recognition.abort();}catch(e){}
+    try{recognition.onend=null;recognition.onerror=null;recognition.abort();}catch(e){}
     recognition=null;
-    // iOS: abort後に少し待ってから新しいインスタンスを作る
-    setTimeout(()=>{ if(state.isRecording) startSpeech(); }, 800);
-  } else {
-    startSpeech();
   }
+  // iOSは特に時間がかかるため1000ms待ってから起動
+  const isIOS=/iPad|iPhone|iPod/.test(navigator.userAgent);
+  const delay=isIOS?1000:50;
+  setTimeout(()=>{
+    if(!state.isRecording) return; // 待っている間に録音が止まっていたら何もしない
+    startSpeech();
+  }, delay);
 }
 
 function startSpeech(){
@@ -1290,7 +1259,7 @@ function deleteRec(){
   if(recognition){try{recognition.onend=null;recognition.abort();}catch(e){}recognition=null;}
   state.audioBlob=null;state.audioUrl=null;state.audioEl=null;
   state.transcript='';state.interimTranscript='';state.aiCorrected='';state.aiStructured=null;state.aiStep1Done=false;state.aiStep2Done=false;
-  state.isRecording=false;
+  state.isRecording=false;state.seconds=0;
   document.getElementById('recCameraRow').style.display='none';
   ['playbackBar','liveTranscript','transcriptEdit','aiResult','aiProcessing'].forEach(x=>document.getElementById(x).classList.remove('visible'));
   document.getElementById('transcriptEditArea').value='';document.getElementById('aiCorrectedText').textContent='';
@@ -1398,7 +1367,7 @@ function renderHistory(){
     list.appendChild(item);
   });
 }
-async function resendRecord(idx){const r=state.records[idx];if(!r) return;r.syncStatus='pending';persistRecords();renderHistory();await sendToSheet(r);renderHistory();}
+async function resendRecord(idx){const r=state.records[idx];if(!r) return;r.syncStatus='pending';persistRecords();await sendToSheet(r);renderHistory();}
 
 // MODAL
 function openModal(idx){
@@ -1418,7 +1387,7 @@ function openModal(idx){
   document.getElementById('modal').classList.add('open');document.body.style.overflow='hidden';
 }
 function closeModal(){document.getElementById('modal').classList.remove('open');document.body.style.overflow='';}
-function deleteRecord(){if(state.modalRecordIdx<0) return;if(!confirm('この記録を削除しますか？')) return;state.records.splice(state.modalRecordIdx,1);persistRecords();closeModal();renderHistory();showToast('削除しました');}
+function deleteRecord(){if(state.modalRecordIdx<0) return;if(!confirm('この記録を削除しますか？')) return;state.records.splice(state.modalRecordIdx,1);persistRecords();closeModal();showToast('削除しました');}
 
 // v11: 追記・再送機能（記録タブと同じフロー）
 let appendPhotos=[];
@@ -1658,7 +1627,7 @@ async function appendSend(){
     if(appendPhotos.length>0) rec.photos=[...(rec.photos||[]),...appendPhotos];
     rec.syncStatus='pending';persistRecords();
     if(state.gasUrl) sendToSheet(rec);
-    closeModal();renderHistory();showToast('送信しました');
+    closeModal();showToast('送信しました');runSearch();
   }
 }
 // DICT
@@ -1913,9 +1882,19 @@ function populateSearchFilters(){
   searchCache.categories.forEach(p=>{const o=document.createElement('option');o.value=p;o.textContent=p;sp.appendChild(o);});
 }
 
-async function runSearch(){
+// ページネーション用
+const SEARCH_PAGE_SIZE=20;
+let searchAllRecords=[];
+let searchCurrentPage=1;
+
+function initSearch(){
+  if(!searchCache.loaded && state.gasUrl) runSearch();
+}
+
+async function runSearch(page){
+  page=page||1;
   if(!state.gasUrl){showToast('GAS URLを設定','error');return;}
-  const params={action:'search',limit:'50'};
+  const params={action:'search',limit:'200'};
   const kw=document.getElementById('searchKeyword').value.trim();
   const subj=document.getElementById('searchSubject').value;
   const type=document.getElementById('searchType').value;
@@ -1924,72 +1903,63 @@ async function runSearch(){
   if(subj) params.subject=subj;
   if(type) params.type=type;
   if(proc) params.category=proc;
-  
-  searchSelectedRows=[];
-  updateSelectedCount();
+
+  searchSelectedRows=[];updateSelectedCount();
   const el=document.getElementById('searchResults');
-  el.innerHTML='<div class="search-loading">検索中...</div>';
+  if(page===1) el.innerHTML='<div class="search-loading">検索中...</div>';
   try{
     const data=await gasGet(params);
     if(!searchCache.loaded){
       searchCache.subjects=data.subjects||[];searchCache.categories=data.categories||data.procedureNames||[];searchCache.loaded=true;
       populateSearchFilters();
     }
-    if(data.records.length===0){el.innerHTML='<div class="search-empty">該当する記録がありません</div>';return;}
-    el.innerHTML='<div style="font-size:11px;color:var(--text-dim);margin-bottom:6px;font-weight:600">'+data.count+'件 / '+data.total+'件中</div>'+
-      '<div style="display:flex;gap:8px;margin-bottom:10px"><button class="search-go-btn" style="font-size:10px;padding:6px 12px" onclick="selectAllSearch()">全選択</button><button class="search-go-btn" style="font-size:10px;padding:6px 12px;border-color:var(--border);color:var(--text-dim)" onclick="deselectAllSearch()">全解除</button></div>';
-    data.records.forEach(rec=>{
-      const item=document.createElement('div');item.className='search-result-item';
-      const rowNum=rec._row;
-      item.dataset.row=rowNum;
-      const text=rec['AI修正テキスト']||rec['元テキスト']||'（メモなし）';
-      const dt=rec['日時']||'';
-      const subj=rec['対象']||'';
-      const type=rec['タイプ']||'';
-      const proc=rec['分類']||rec['手順名']||'';
-      const step=rec['ステップ番号']||'';
-      let meta=dt;
-      if(subj) meta+=' | '+subj;
-      if(type) meta+=' | '+type;
-      if(proc) meta+=' | '+proc;
-      if(step) meta+=' Step'+step;
-      
-      let structHtml='';
-      if(rec['AI構造化']){
-        try{
-          const parsed=JSON.parse(rec['AI構造化']);
-          structHtml='<div style="margin-top:8px;font-size:11px;color:var(--text-mid)">';
-          for(const[k,v] of Object.entries(parsed)){
-            structHtml+='<span style="color:var(--primary);font-weight:600">'+escapeHtml(k)+'</span>: '+escapeHtml(String(v||'')).substring(0,60)+'<br>';
-          }
-          structHtml+='</div>';
-        }catch(e){}
-      }
-      
-      item.innerHTML='<div class="search-result-check" data-row="'+rowNum+'">✓</div><div class="search-result-body"><div class="search-result-text">'+escapeHtml(text)+'</div>'+structHtml+'<div class="search-result-meta">'+escapeHtml(meta)+'</div></div>';
-      
-      // チェックボックス部分クリック→選択切替
-      const checkEl=item.querySelector('.search-result-check');
-      checkEl.onclick=(e)=>{
-        e.stopPropagation();
-        item.classList.toggle('selected');
-        if(item.classList.contains('selected')){
-          if(!searchSelectedRows.includes(rowNum)) searchSelectedRows.push(rowNum);
-        }else{
-          searchSelectedRows=searchSelectedRows.filter(r=>r!==rowNum);
-        }
-        updateSelectedCount();
-      };
-      // 本文部分クリック→詳細モーダル
-      const bodyEl=item.querySelector('.search-result-body');
-      bodyEl.onclick=(e)=>{
-        e.stopPropagation();
-        openSearchModal(rec);
-      };
-      
-      el.appendChild(item);
-    });
+    searchAllRecords=data.records||[];
+    searchCurrentPage=page;
+    renderSearchPage(page);
   }catch(err){el.innerHTML='<div class="search-empty">検索エラー: '+escapeHtml(err.message)+'</div>';}
+}
+
+function renderSearchPage(page){
+  const el=document.getElementById('searchResults');
+  const total=searchAllRecords.length;
+  if(total===0){el.innerHTML='<div class="search-empty">該当する記録がありません</div>';return;}
+  const totalPages=Math.ceil(total/SEARCH_PAGE_SIZE);
+  const start=(page-1)*SEARCH_PAGE_SIZE;
+  const pageRecs=searchAllRecords.slice(start,start+SEARCH_PAGE_SIZE);
+
+  el.innerHTML='';
+  // 件数・全選択行
+  const infoBar=document.createElement('div');
+  infoBar.style.cssText='display:flex;justify-content:space-between;align-items:center;margin-bottom:10px';
+  infoBar.innerHTML='<span style="font-size:11px;color:var(--text-dim);font-weight:600">'+total+'件中 '+(start+1)+'〜'+Math.min(start+SEARCH_PAGE_SIZE,total)+'件表示</span>'+
+    '<div style="display:flex;gap:6px"><button class="search-go-btn" style="font-size:10px;padding:5px 10px" onclick="selectAllSearch()">全選択</button><button class="search-go-btn" style="font-size:10px;padding:5px 10px;border-color:var(--border);color:var(--text-dim)" onclick="deselectAllSearch()">全解除</button></div>';
+  el.appendChild(infoBar);
+
+  pageRecs.forEach(rec=>{
+    const item=document.createElement('div');item.className='search-result-item';
+    const rowNum=rec._row;item.dataset.row=rowNum;
+    const text=rec['AI修正テキスト']||rec['元テキスト']||'（メモなし）';
+    const dt=rec['日時']||'';const subj=rec['対象']||'';const type=rec['タイプ']||'';
+    const proc=rec['分類']||rec['手順名']||'';const step=rec['ステップ番号']||'';
+    let meta=dt;if(subj) meta+=' | '+subj;if(type) meta+=' | '+type;if(proc) meta+=' | '+proc;if(step) meta+=' Step'+step;
+    let structHtml='';
+    if(rec['AI構造化']){try{const parsed=JSON.parse(rec['AI構造化']);structHtml='<div style="margin-top:6px;font-size:11px;color:var(--text-mid)">';for(const[k,v] of Object.entries(parsed)){structHtml+='<span style="color:var(--primary);font-weight:600">'+escapeHtml(k)+'</span>: '+escapeHtml(String(v||'')).substring(0,50)+'<br>';}structHtml+='</div>';}catch(e){}}
+    item.innerHTML='<div class="search-result-check" data-row="'+rowNum+'">✓</div><div class="search-result-body"><div class="search-result-text">'+escapeHtml(text)+'</div>'+structHtml+'<div class="search-result-meta">'+escapeHtml(meta)+'</div></div>';
+    const checkEl=item.querySelector('.search-result-check');
+    checkEl.onclick=(e)=>{e.stopPropagation();item.classList.toggle('selected');if(item.classList.contains('selected')){if(!searchSelectedRows.includes(rowNum))searchSelectedRows.push(rowNum);}else{searchSelectedRows=searchSelectedRows.filter(r=>r!==rowNum);}updateSelectedCount();};
+    item.querySelector('.search-result-body').onclick=(e)=>{e.stopPropagation();openSearchModal(rec);};
+    el.appendChild(item);
+  });
+
+  // ページネーション
+  if(totalPages>1){
+    const pg=document.createElement('div');
+    pg.style.cssText='display:flex;justify-content:center;align-items:center;gap:8px;margin-top:16px;padding-top:12px;border-top:1px solid var(--border)';
+    if(page>1) pg.innerHTML+='<button class="search-go-btn" style="padding:8px 16px;font-size:13px" onclick="renderSearchPage('+( page-1)+')">← 前へ</button>';
+    pg.innerHTML+='<span style="font-size:12px;color:var(--text-dim)">'+page+' / '+totalPages+'ページ</span>';
+    if(page<totalPages) pg.innerHTML+='<button class="search-go-btn" style="padding:8px 16px;font-size:13px" onclick="renderSearchPage('+(page+1)+')">次へ →</button>';
+    el.appendChild(pg);
+  }
 }
 
 function selectAllSearch(){
@@ -2039,12 +2009,76 @@ function openSearchModal(rec){
   if(rec['ステップ番号']) meta+=' Step'+rec['ステップ番号'];
   document.getElementById('modalMeta').textContent=meta;
   state.modalRecordIdx=-1;
-  state.modalSearchRec=rec; // 検索結果レコードを保持（行番号含む）
+  state.modalSearchRec=rec;
+  // 新UI: 編集エリアをリセット
   document.querySelector('.modal-delete').style.display='none';
-  document.querySelector('.modal-append-btn').style.display='block';
-  document.getElementById('modalAppendArea').style.display='none';
-  document.getElementById('modalAppendText').value='';
+  document.getElementById('modalEditToggleBtn').style.display='block';
+  document.getElementById('modalEditArea').style.display='none';
+  document.getElementById('modalEditText').value=text;
+  document.getElementById('modalChatInput').value='';
+  document.getElementById('modalChatProcessing').style.display='none';
   document.getElementById('modal').classList.add('open');document.body.style.overflow='hidden';
+}
+
+// モーダルの修正エリア表示切替
+function toggleModalEdit(){
+  const area=document.getElementById('modalEditArea');
+  const isOpen=area.style.display!=='none';
+  area.style.display=isOpen?'none':'block';
+  document.getElementById('modalEditToggleBtn').textContent=isOpen?'✏️ 修正・追記する':'✖ 修正を閉じる';
+  if(!isOpen){
+    // 開く時に現在のテキストをセット
+    const rec=state.modalSearchRec;
+    const text=rec?rec['AI修正テキスト']||rec['元テキスト']||'':'';
+    document.getElementById('modalEditText').value=text;
+  }
+}
+
+// モーダルAIチャット修正
+async function runModalChat(){
+  const instruction=document.getElementById('modalChatInput').value.trim();
+  if(!instruction){showToast('指示を入力してください','error');return;}
+  if(!state.apiKey.trim()){showToast('設定でAPIキーを入力','error');return;}
+  const currentText=document.getElementById('modalEditText').value.trim();
+  if(!currentText){showToast('テキストがありません','error');return;}
+  document.getElementById('modalChatProcessing').style.display='block';
+  const rec=state.modalSearchRec;
+  const ctx=rec?('対象: '+(rec['対象']||'')+(rec['分類']?'\n分類: '+rec['分類']:'')+'\n'):'';
+  const sys='あなたは現場記録の修正アシスタントです。\n'+ctx+'ユーザーの指示に従ってテキストを修正してください。\nJSON形式のみで返す（バッククォート不要）:\n{"corrected":"修正後テキスト"}';
+  try{
+    const raw=await callAPI(sys,'【現在のテキスト】\n'+currentText+'\n\n【指示】\n'+instruction);
+    document.getElementById('modalChatProcessing').style.display='none';
+    let parsed;try{parsed=JSON.parse(raw.replace(/```json|```/g,'').trim());}catch(e){parsed={corrected:raw};}
+    if(parsed.corrected){
+      document.getElementById('modalEditText').value=parsed.corrected;
+      showToast('修正しました');
+    }
+    document.getElementById('modalChatInput').value='';
+  }catch(err){
+    document.getElementById('modalChatProcessing').style.display='none';
+    showToast('AI処理失敗: '+err.message,'error');
+  }
+}
+
+// モーダルの修正をスプレッドシートに保存
+async function modalEditSave(){
+  const text=document.getElementById('modalEditText').value.trim();
+  if(!text){showToast('テキストがありません','error');return;}
+  if(!state.gasUrl){showToast('GAS URLを設定','error');return;}
+  const rec=state.modalSearchRec;
+  if(!rec||!rec._row){showToast('保存対象が見つかりません','error');return;}
+  try{
+    const payload={_action:'update_row',row:rec._row,corrected:text,transcript:rec['元テキスト']||text};
+    const result=await gasPost(payload);
+    if(result.success){
+      // キャッシュも更新
+      rec['AI修正テキスト']=text;
+      document.getElementById('modalText').textContent=text;
+      document.getElementById('modalEditArea').style.display='none';
+      document.getElementById('modalEditToggleBtn').textContent='✏️ 修正・追記する';
+      showToast('保存しました');
+    }else{showToast('保存失敗: '+(result.message||'不明なエラー'),'error');}
+  }catch(err){showToast('保存エラー: '+err.message,'error');}
 }
 
 // ===== v10: REPORT GENERATION =====
@@ -2096,7 +2130,7 @@ async function generateReport(){
 }
 
 // INIT
-renderDict();renderHistory();updateSave();renderGenbaSelector();
+renderDict();updateSave();renderGenbaSelector();
 debugLog('GENBA REC v13.0 初期化完了');
 debugLog('Speech: '+(state.speechSupported?'対応':'非対応'));
 // 起動時に対象マスター＋辞書をサーバーから同期
