@@ -1274,10 +1274,8 @@ function clearAll(){
   if(state.photos.length>0||state.audioBlob||document.getElementById('transcriptEditArea').value.trim()){
     if(!confirm('録音・写真・AI結果をすべてクリアします。よろしいですか？')) return;
   }
-  deleteRec();
-  state.photos=[];renderPhotoGrid();
-  updateSave();
-  showToast('全てクリアしました');
+  // iOS Safari では SpeechRecognition の状態が残るため、リロードで完全リセット
+  location.reload();
 }
 
 // deleteRec: 内部用（全リセット。外部からはretakeRecかclearAllを使う）
