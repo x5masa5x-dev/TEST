@@ -1230,6 +1230,9 @@ function togglePlay(){if(!state.audioEl) return;if(state.audioEl.paused) state.a
 function retakeRec(){
   if(state.audioEl){try{state.audioEl.pause();state.audioEl.src='';}catch(e){}}
   if(state.audioUrl) URL.revokeObjectURL(state.audioUrl);
+  if(mediaRecorder&&mediaRecorder.state!=='inactive'){try{mediaRecorder.stop();}catch(e){}}
+  mediaRecorder=null; audioChunks=[];
+  if(state.stream){try{state.stream.getTracks().forEach(t=>t.stop());}catch(e){}state.stream=null;}
   if(recognition){
     try{recognition.onend=null;recognition.abort();}catch(e){}
     recognition=null;
@@ -1269,6 +1272,11 @@ function clearAll(){
 function deleteRec(){
   if(state.audioEl){try{state.audioEl.pause();state.audioEl.src='';}catch(e){}}
   if(state.audioUrl) URL.revokeObjectURL(state.audioUrl);
+  // mediaRecorderとstreamを確実に停止・破棄
+  if(mediaRecorder&&mediaRecorder.state!=='inactive'){try{mediaRecorder.stop();}catch(e){}}
+  mediaRecorder=null; audioChunks=[];
+  if(state.stream){try{state.stream.getTracks().forEach(t=>t.stop());}catch(e){}state.stream=null;}
+  // recognitionをonend無効化してからabort（iOS再起動ループ防止）
   if(recognition){try{recognition.onend=null;recognition.abort();}catch(e){}recognition=null;}
   state.audioBlob=null;state.audioUrl=null;state.audioEl=null;
   state.transcript='';state.interimTranscript='';state.aiCorrected='';state.aiStructured=null;state.aiStep1Done=false;state.aiStep2Done=false;
