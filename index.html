@@ -367,6 +367,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
         <!-- v12: 録音中のカメラボタン（録音中のみ表示） -->
         <div id="recCameraRow" style="display:none;text-align:center;margin:-4px 0 8px">
           <button onclick="document.getElementById('fileInput').click()" style="padding:10px 20px;border-radius:10px;border:1.5px solid var(--primary);background:var(--primary-dim);color:var(--primary);font-size:14px;font-weight:700;cursor:pointer;font-family:var(--fb)">📷 撮影</button>
+          <div style="font-size:10px;color:var(--text-dim);margin-top:6px;line-height:1.5">撮影すると、確定済みテキストの末尾に📷マーカーが自動挿入されます</div>
         </div>
         <div class="live-transcript" id="liveTranscript">
           <div class="live-transcript-label"><div class="pulse-dot"></div>LIVE TRANSCRIPT</div>
@@ -386,7 +387,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
           <textarea class="text-area" id="transcriptEditArea" placeholder="音声認識の結果がここに表示されます。手動で修正もできます。"></textarea>
           <div style="display:flex;gap:8px;align-items:center;margin-top:6px">
             <div class="transcript-edit-hint" style="flex:1">誤変換があれば修正してからAI処理を実行</div>
-            <button onclick="insertPhotoMarker('transcriptEditArea')" style="padding:4px 10px;border-radius:6px;border:1.5px solid var(--primary);background:var(--primary-dim);color:var(--primary);font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap" id="insertMarkerBtnVoice">📷 挿入</button>
+            <button onclick="insertPhotoMarker('transcriptEditArea')" style="padding:4px 10px;border-radius:6px;border:1.5px solid var(--primary);background:var(--primary-dim);color:var(--primary);font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap" id="insertMarkerBtnVoice" title="テキスト内のカーソル位置に写真マーカーを挿入">📷 挿入</button>
           </div>
           <div class="ai-btns">
             <button class="ai-btn" onclick="runAIStep1('voice')">① テキスト修正</button>
@@ -421,7 +422,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
     <div class="manual-input-section" id="textSection">
       <textarea class="text-area" id="manualText" placeholder="メモをテキストで入力...&#10;例：砥石を交換した。目盛りは3.5に合わせた。"></textarea>
       <div style="display:flex;gap:8px;align-items:center;margin:6px 0">
-        <button onclick="insertPhotoMarker('manualText')" style="padding:4px 10px;border-radius:6px;border:1.5px solid var(--primary);background:var(--primary-dim);color:var(--primary);font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap">📷 挿入</button>
+        <button onclick="insertPhotoMarker('manualText')" style="padding:4px 10px;border-radius:6px;border:1.5px solid var(--primary);background:var(--primary-dim);color:var(--primary);font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap" title="テキスト内のカーソル位置に写真マーカーを挿入">📷 挿入</button>
         <div style="font-size:10px;color:var(--text-dim)">カーソル位置に写真マーカーを挿入</div>
       </div>
       <div class="ai-btns">
@@ -1032,15 +1033,13 @@ function stopSpeech(){
     try{recognition.onend=null;recognition.onerror=null;recognition.onresult=null;recognition.abort();}catch(e){}
     recognition=null;
   }
-  // abort完了後にstreamを解放（マイクインジケータ消去）
-  // 次回startRecで再取得されるので安全
-  setTimeout(()=>{
-    if(!state.isRecording&&!speechActive&&state.stream){
-      try{state.stream.getTracks().forEach(t=>t.stop());}catch(e){}
-      state.stream=null;
-      debugLog('マイクストリーム解放');
-    }
-  },500);
+  // abort完了後、streamを即座に解放（マイクインジケータ消去）
+  // 次回startRecでgetUserMediaにより再取得される
+  if(state.stream){
+    try{state.stream.getTracks().forEach(t=>t.stop());}catch(e){}
+    state.stream=null;
+    debugLog('マイクストリーム解放');
+  }
 }
 
 // WAVE
