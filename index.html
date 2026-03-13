@@ -940,8 +940,8 @@ async function startRec(){
 function stopRec(){
   debugLog('録音停止');state.isRecording=false;clearInterval(timerInt);stopWave();
   document.getElementById('recCameraRow').style.display='none';
+  // iOS Safari: recognition.stop()/abort()は絶対に呼ばない。フラグだけで制御
   speechActive=false;
-  if(recognition){try{recognition.stop();}catch(e){}}
   if(mediaRecorder&&mediaRecorder.state!=='inactive') mediaRecorder.stop();
   if(state.stream){state.stream.getTracks().forEach(t=>t.stop());state.stream=null;}
   // P2: audio cleanup
@@ -956,33 +956,13 @@ function stopRec(){
   updateSave();
 }
 
-// SPEECH - シングルトンパターン（iOSではabort→new が不安定なため、インスタンスを使い回す）
+// SPEECH - iOS Safari対策: recognition.stop()/abort()は絶対に呼ばない
+// フラグだけで制御し、onendの自然発火に任せる
 let speechActive=false;
+let recognitionRunning=false;
 
 function startSpeechSafe(){
   speechActive=true;
-  // 既にインスタンスがあり動作中なら一旦stop（onendで再起動される）
-  if(recognition){
-    try{recognition.stop();}catch(e){}
-    // onendハンドラ内でspeechActive=trueなら自動再起動するので、少し待つ
-    const isIOS=/iPad|iPhone|iPod/.test(navigator.userAgent);
-    setTimeout(()=>{
-      if(!state.isRecording||!speechActive) return;
-      // onendで再起動されていない場合のフォールバック
-      startSpeech();
-    }, isIOS?1200:300);
-    return;
-  }
-  // 初回：少し待ってから起動（iOS対策）
-  const isIOS=/iPad|iPhone|iPod/.test(navigator.userAgent);
-  const delay=isIOS?500:50;
-  setTimeout(()=>{
-    if(!state.isRecording||!speechActive) return;
-    startSpeech();
-  }, delay);
-}
-
-function startSpeech(){
   if(!SpeechR) return;
   // インスタンスがなければ1回だけ生成
   if(!recognition){
@@ -993,8 +973,7 @@ function startSpeech(){
     recognition.continuous=!isIOS;
     debugLog('SpeechRecognition インスタンス生成'+(isIOS?' (iOS: continuous=false)':''));
   }
-  document.getElementById('liveTranscript').classList.add('visible');
-  document.getElementById('liveText').innerHTML=state.transcript?escapeHtml(state.transcript)+'<span class="interim">聴き取り中...</span>':'<span class="interim">聴き取り中...</span>';
+  // ハンドラを毎回セット（transcript等の参照を最新にする）
   recognition.onresult=e=>{
     if(!speechActive) return;
     let interim='',final='';
@@ -1005,22 +984,34 @@ function startSpeech(){
   recognition.onerror=e=>{
     debugLog('音声認識エラー: '+e.error);
     if(e.error==='not-allowed') showToast('音声認識の権限がありません','error');
-    // aborted/no-speech はiOSで頻発するので無視（onendで再起動）
   };
   recognition.onend=()=>{
+    recognitionRunning=false;
     debugLog('音声認識onend (speechActive='+speechActive+', isRecording='+state.isRecording+')');
     if(speechActive&&state.isRecording){
-      // iOSのcontinuous=false対応：終了後に自動再起動
       setTimeout(()=>{
-        if(speechActive&&state.isRecording&&recognition){
-          try{recognition.start();debugLog('音声認識 自動再起動');}
+        if(speechActive&&state.isRecording&&recognition&&!recognitionRunning){
+          try{recognition.start();recognitionRunning=true;debugLog('音声認識 自動再起動');}
           catch(e){debugLog('再起動失敗: '+e.message);}
         }
       },300);
     }
   };
-  try{recognition.start();debugLog('音声認識 開始');}
-  catch(e){debugLog('開始エラー: '+e.message);}
+  // UI
+  document.getElementById('liveTranscript').classList.add('visible');
+  document.getElementById('liveText').innerHTML=state.transcript?escapeHtml(state.transcript)+'<span class="interim">聴き取り中...</span>':'<span class="interim">聴き取り中...</span>';
+  // 既に動いていなければ開始
+  if(!recognitionRunning){
+    // iOS: getUserMedia後に少し待ってから開始
+    const isIOS=/iPad|iPhone|iPod/.test(navigator.userAgent);
+    setTimeout(()=>{
+      if(!speechActive||!state.isRecording) return;
+      try{recognition.start();recognitionRunning=true;debugLog('音声認識 開始');}
+      catch(e){debugLog('開始エラー: '+e.message);}
+    }, isIOS?500:50);
+  } else {
+    debugLog('音声認識 既に動作中、継続');
+  }
 }
 
 // WAVE
@@ -1248,7 +1239,7 @@ function retakeRec(){
   mediaRecorder=null; audioChunks=[];
   if(state.stream){try{state.stream.getTracks().forEach(t=>t.stop());}catch(e){}state.stream=null;}
   speechActive=false;
-  if(recognition){try{recognition.stop();}catch(e){}}
+  // recognition には触らない（iOS Safari対策）
   state.audioBlob=null;state.audioUrl=null;state.audioEl=null;
   state.transcript='';state.interimTranscript='';
   state.isRecording=false;
@@ -1317,9 +1308,8 @@ function deleteRec(){
   if(mediaRecorder&&mediaRecorder.state!=='inactive'){try{mediaRecorder.stop();}catch(e){}}
   mediaRecorder=null; audioChunks=[];
   if(state.stream){try{state.stream.getTracks().forEach(t=>t.stop());}catch(e){}state.stream=null;}
-  // recognitionはシングルトン。stopのみ（破棄しない）
+  // recognition には触らない（iOS Safari対策）
   speechActive=false;
-  if(recognition){try{recognition.stop();}catch(e){}}
   state.audioBlob=null;state.audioUrl=null;state.audioEl=null;
   state.transcript='';state.interimTranscript='';state.aiCorrected='';state.aiStructured=null;state.aiStep1Done=false;state.aiStep2Done=false;
   state.isRecording=false;state.seconds=0;
