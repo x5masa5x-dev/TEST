@@ -1573,13 +1573,15 @@ async function loadDictFromServer(){
   try{
     const data=await gasGet({action:'get_dict'});
     if(data.success&&data.words){
-      // サーバーとローカルをマージ
-      const localSet=new Set(state.dictionary);
       const serverSet=new Set(data.words);
+      const localSet=new Set(state.dictionary);
       // サーバーにあってローカルにないもの追加
       data.words.forEach(w=>{if(!localSet.has(w)) state.dictionary.push(w);});
-      // ローカルにあってサーバーにないもの送信
-      state.dictionary.forEach(w=>{if(!serverSet.has(w)) syncDictToServer('save',w);});
+      // ローカルにあってサーバーにないもの → 順次待ちながら送信（並列送信すると重複になるため）
+      const toSync=state.dictionary.filter(w=>!serverSet.has(w));
+      for(const w of toSync){
+        await syncDictToServer('save',w);
+      }
       localStorage.setItem('gr_dict',JSON.stringify(state.dictionary));
       renderDict();
       debugLog('辞書読込完了: '+state.dictionary.length+'語');
