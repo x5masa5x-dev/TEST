@@ -966,10 +966,8 @@ async function startRec(){
     if(!existing) document.getElementById('transcriptEdit').classList.remove('visible');
     timerInt=setInterval(()=>{state.seconds++;document.getElementById('recTimer').textContent=fmtTime(state.seconds);},1000);
     startWave();
-    // iOSは前のrecognitionセッションが完全終了するまで待ってから再起動
-    const isIOS=/iPad|iPhone|iPod/.test(navigator.userAgent);
     if(state.speechSupported){
-      setTimeout(()=>{ if(state.isRecording) startSpeech(); }, isIOS ? 600 : 0);
+      startSpeechSafe();
     } else{document.getElementById('liveTranscript').classList.add('visible');document.getElementById('liveText').textContent='（自動文字起こし非対応）';}
   }catch(err){debugLog('エラー: '+err.message);showToast('マイクへのアクセスを許可してください','error');}
 }
@@ -992,6 +990,18 @@ function stopRec(){
 }
 
 // SPEECH
+function startSpeechSafe(){
+  // 前のrecognitionが残っていたら終了を待ってから起動
+  if(recognition){
+    try{recognition.onend=null;recognition.abort();}catch(e){}
+    recognition=null;
+    // iOS: abort後に少し待ってから新しいインスタンスを作る
+    setTimeout(()=>{ if(state.isRecording) startSpeech(); }, 800);
+  } else {
+    startSpeech();
+  }
+}
+
 function startSpeech(){
   if(!SpeechR) return;
   recognition=new SpeechR(); recognition.lang='ja-JP'; recognition.interimResults=true;
