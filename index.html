@@ -890,9 +890,14 @@ function renderPhotoGrid(){
 async function toggleRec(){if(state.isRecording) stopRec(); else startRec();}
 async function startRec(){
   try{
-    debugLog('マイクアクセス要求中...');
-    const stream=await navigator.mediaDevices.getUserMedia({audio:true});
-    state.stream=stream; debugLog('マイクOK');
+    // iOS Safari対策: ストリームを使い回す（停止するとSpeechRecognitionが壊れる）
+    if(!state.stream || !state.stream.active){
+      debugLog('マイクアクセス要求中...');
+      const stream=await navigator.mediaDevices.getUserMedia({audio:true});
+      state.stream=stream; debugLog('マイクOK');
+    } else {
+      debugLog('マイク 既存ストリーム再利用');
+    }
     let mt='audio/webm';
     if(typeof MediaRecorder.isTypeSupported==='function'){
       if(MediaRecorder.isTypeSupported('audio/webm')) mt='audio/webm';
@@ -900,12 +905,12 @@ async function startRec(){
       else mt='';
     }
     const opts=mt?{mimeType:mt}:{};
-    mediaRecorder=new MediaRecorder(stream,opts); audioChunks=[];
+    mediaRecorder=new MediaRecorder(state.stream,opts); audioChunks=[];
     mediaRecorder.ondataavailable=e=>{if(e.data.size>0) audioChunks.push(e.data);};
     mediaRecorder.onstop=()=>{
       const blob=new Blob(audioChunks,{type:mt||'audio/webm'});
       state.audioBlob=blob; state.audioUrl=URL.createObjectURL(blob); state.audioEl=new Audio(state.audioUrl);
-      if(state.stream){state.stream.getTracks().forEach(t=>t.stop());state.stream=null;}
+      // iOS Safari対策: streamは止めない（SpeechRecognitionのaudio-captureエラー防止）
       document.getElementById('playbackBar').classList.add('visible');
       document.getElementById('playbackTime').textContent=fmtTime(state.seconds);
       const ea=document.getElementById('transcriptEditArea');
@@ -943,7 +948,7 @@ function stopRec(){
   // iOS Safari: recognition.stop()/abort()は絶対に呼ばない。フラグだけで制御
   speechActive=false;
   if(mediaRecorder&&mediaRecorder.state!=='inactive') mediaRecorder.stop();
-  if(state.stream){state.stream.getTracks().forEach(t=>t.stop());state.stream=null;}
+  // streamは止めない（iOS Safari: SpeechRecognitionのaudio-captureエラー防止）
   // P2: audio cleanup
   if(state.audioEl){try{state.audioEl.pause();state.audioEl.src='';}catch(e){}}
   if(state.audioUrl){URL.revokeObjectURL(state.audioUrl);state.audioUrl=null;}
@@ -1237,7 +1242,7 @@ function retakeRec(){
   if(state.audioUrl) URL.revokeObjectURL(state.audioUrl);
   if(mediaRecorder&&mediaRecorder.state!=='inactive'){try{mediaRecorder.stop();}catch(e){}}
   mediaRecorder=null; audioChunks=[];
-  if(state.stream){try{state.stream.getTracks().forEach(t=>t.stop());}catch(e){}state.stream=null;}
+  // streamは止めない（iOS Safari対策）
   speechActive=false;
   // recognition には触らない（iOS Safari対策）
   state.audioBlob=null;state.audioUrl=null;state.audioEl=null;
@@ -1275,7 +1280,7 @@ function clearAll(){
   // MediaRecorder破棄（recognition は触らない）
   if(mediaRecorder&&mediaRecorder.state!=='inactive'){try{mediaRecorder.stop();}catch(e){}}
   mediaRecorder=null; audioChunks=[];
-  if(state.stream){try{state.stream.getTracks().forEach(t=>t.stop());}catch(e){}state.stream=null;}
+  // streamは止めない（iOS Safari対策）
   // データリセット
   state.photos=[];
   state.transcript='';state.interimTranscript='';
@@ -1307,7 +1312,7 @@ function deleteRec(){
   // mediaRecorderとstreamを確実に停止・破棄
   if(mediaRecorder&&mediaRecorder.state!=='inactive'){try{mediaRecorder.stop();}catch(e){}}
   mediaRecorder=null; audioChunks=[];
-  if(state.stream){try{state.stream.getTracks().forEach(t=>t.stop());}catch(e){}state.stream=null;}
+  // streamは止めない（iOS Safari対策）
   // recognition には触らない（iOS Safari対策）
   speechActive=false;
   state.audioBlob=null;state.audioUrl=null;state.audioEl=null;
