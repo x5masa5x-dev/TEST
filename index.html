@@ -384,7 +384,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
         <!-- Editable transcript + 2-step AI -->
         <div class="transcript-edit" id="transcriptEdit">
           <div class="transcript-edit-label">文字起こし結果（編集可能）</div>
-          <textarea class="text-area" id="transcriptEditArea" placeholder="音声認識の結果がここに表示されます。手動で修正もできます。"></textarea>
+          <textarea class="text-area" id="transcriptEditArea" autocomplete="off" placeholder="音声認識の結果がここに表示されます。手動で修正もできます。"></textarea>
           <div style="display:flex;gap:8px;align-items:center;margin-top:6px">
             <div class="transcript-edit-hint" style="flex:1">誤変換があれば修正してからAI処理を実行</div>
             <button onclick="insertPhotoMarker('transcriptEditArea')" style="padding:4px 10px;border-radius:6px;border:1.5px solid var(--primary);background:var(--primary-dim);color:var(--primary);font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap" id="insertMarkerBtnVoice" title="テキスト内のカーソル位置に写真マーカーを挿入">📷 挿入</button>
@@ -420,7 +420,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
 
     <!-- Text section -->
     <div class="manual-input-section" id="textSection">
-      <textarea class="text-area" id="manualText" placeholder="メモをテキストで入力...&#10;例：砥石を交換した。目盛りは3.5に合わせた。"></textarea>
+      <textarea class="text-area" id="manualText" autocomplete="off" placeholder="メモをテキストで入力...&#10;例：砥石を交換した。目盛りは3.5に合わせた。"></textarea>
       <div style="display:flex;gap:8px;align-items:center;margin:6px 0">
         <button onclick="insertPhotoMarker('manualText')" style="padding:4px 10px;border-radius:6px;border:1.5px solid var(--primary);background:var(--primary-dim);color:var(--primary);font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap" title="テキスト内のカーソル位置に写真マーカーを挿入">📷 挿入</button>
         <div style="font-size:10px;color:var(--text-dim)">カーソル位置に写真マーカーを挿入</div>
@@ -1309,11 +1309,23 @@ function clearAll(){
   document.getElementById('aiStructured').innerHTML='';document.getElementById('aiStructured').style.display='none';
   document.getElementById('aiEditArea').style.display='none';
   document.getElementById('liveText').textContent='';
+  // 手動入力モードもクリア
+  document.getElementById('manualText').value='';
+  ['aiResultManual','aiProcessingManual'].forEach(x=>document.getElementById(x).classList.remove('visible'));
+  document.getElementById('aiCorrectedTextManual').textContent='';
+  document.getElementById('aiStructuredManual').innerHTML='';document.getElementById('aiStructuredManual').style.display='none';
+  document.getElementById('aiEditAreaManual').style.display='none';
+  // AIチャット欄もクリア
+  ['aiChatRow','aiChatRowManual'].forEach(x=>{const el=document.getElementById(x);if(el)el.style.display='none';});
+  const ci1=document.getElementById('aiChatInput');if(ci1)ci1.value='';
+  const ci2=document.getElementById('aiChatInputManual');if(ci2)ci2.value='';
+  // 録音UIリセット
   document.getElementById('recLabel').textContent='タップして録音を開始';
   document.getElementById('recBtn').classList.remove('recording');
   document.getElementById('recorder').classList.remove('is-recording');
   document.getElementById('recLabel').classList.remove('active');
   document.getElementById('recTimer').classList.remove('visible');
+  document.getElementById('recTimer').textContent='00:00';
   clearInterval(timerInt);stopWave();
   updateSave();
   showToast('全てクリアしました');
@@ -1593,12 +1605,14 @@ async function deleteGenba(){
 // VOICE INPUT (settings)
 let settingsRec=null,activeVBtn=null;
 function toggleVoiceInput(tid,bid){
+  // iOS Safari: 設定の音声入力がメイン録音のSpeechRecognitionと競合して壊れるため無効化
+  const isIOS=/iPad|iPhone|iPod/.test(navigator.userAgent);
+  if(isIOS){showToast('iOSでは音声入力ボタンは使えません。手入力してください','info');return;}
   const btn=document.getElementById(bid);
   if(settingsRec&&activeVBtn===bid){stopVoiceInput();return;}
   if(settingsRec) stopVoiceInput();
   if(!SpeechR){showToast('音声入力非対応','error');return;}
-  const isIOS=/iPad|iPhone|iPod/.test(navigator.userAgent);
-  const sr=new SpeechR();sr.lang='ja-JP';sr.interimResults=true;sr.continuous=!isIOS;
+  const sr=new SpeechR();sr.lang='ja-JP';sr.interimResults=true;sr.continuous=true;
   const target=document.getElementById(tid),isTA=target.tagName==='TEXTAREA',base=target.value;
   btn.classList.add('listening');activeVBtn=bid;settingsRec=sr;
   const ind=document.getElementById('voiceIndicator_'+tid);if(ind){ind.style.display='block';ind.textContent='🎤 音声入力中...';}
@@ -1922,6 +1936,10 @@ async function generateReport(){
 
 // INIT
 renderDict();updateSave();renderGenbaSelector();
+// Safari のフォーム自動復元対策: 起動時にテキストエリアを強制クリア
+document.getElementById('transcriptEditArea').value='';
+document.getElementById('manualText').value='';
+document.getElementById('liveText').textContent='';
 debugLog('GENBA REC v13.0 初期化完了');
 debugLog('Speech: '+(state.speechSupported?'対応':'非対応'));
 
