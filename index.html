@@ -20,9 +20,19 @@
   --radius:14px; --radius-sm:10px;
   --fh:'Outfit',sans-serif; --fb:'Noto Sans JP',sans-serif; --fm:'Space Mono',monospace;
 }
+body.light-theme {
+  --bg:#f5f5f0; --bg2:#eaeae5; --surface:#ffffff; --surface2:#f0f0eb; --surface3:#e5e5e0;
+  --border:#d0d0c8; --border-light:#c0c0b8;
+  --text:#1a1a18; --text-dim:#888880; --text-mid:#666660;
+  --primary:#d06010; --primary-dim:rgba(208,96,16,.1); --primary-glow:rgba(208,96,16,.2);
+  --red:#d03030; --red-dim:rgba(208,48,48,.1); --red-glow:rgba(208,48,48,.2);
+  --green:#2a9050; --green-dim:rgba(42,144,80,.1);
+  --amber:#c89010; --amber-dim:rgba(200,144,16,.1);
+}
 *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 body{font-family:var(--fb);background:var(--bg);color:var(--text);min-height:100dvh;-webkit-font-smoothing:antialiased;overflow-x:hidden;font-size:15px}
 body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellipse at 20% 0%,rgba(232,115,26,.04) 0%,transparent 60%),radial-gradient(ellipse at 80% 100%,rgba(232,115,26,.03) 0%,transparent 50%);pointer-events:none;z-index:0}
+body.light-theme::before{background:none}
 
 /* NAV */
 .nav{position:sticky;top:0;z-index:100;background:rgba(20,20,22,.94);backdrop-filter:blur(24px);border-bottom:1px solid var(--border)}
@@ -137,10 +147,10 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
 .ai-corrected-block{background:var(--bg2);border-radius:var(--radius-sm);padding:14px;border:1px solid var(--border);margin-bottom:12px;position:relative}
 .ai-corrected-label{font-size:10px;font-weight:600;color:var(--text-dim);letter-spacing:1px;margin-bottom:6px}
 .ai-corrected-text{font-size:14px;line-height:1.7;color:var(--text)}
-.ai-chat-row{display:flex;gap:8px;margin-top:12px;padding-top:12px;border-top:1px solid var(--border)}
-.ai-chat-input{flex:1;padding:9px 12px;border-radius:10px;border:1.5px solid var(--border);background:var(--surface2);color:var(--text);font-size:13px;font-family:var(--fb);outline:none}
+.ai-chat-row{display:flex;gap:6px;margin-top:12px;padding-top:12px;border-top:1px solid var(--border);align-items:center}
+.ai-chat-input{flex:1;min-width:0;padding:9px 12px;border-radius:10px;border:1.5px solid var(--border);background:var(--surface2);color:var(--text);font-size:13px;font-family:var(--fb);outline:none}
 .ai-chat-input:focus{border-color:var(--primary)}
-.ai-chat-btn{flex-shrink:0;padding:9px 16px;border-radius:10px;border:none;background:var(--primary);color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:var(--fb)}
+.ai-chat-btn{flex-shrink:0;padding:9px 14px;border-radius:10px;border:none;background:var(--primary);color:#fff;font-size:12px;font-weight:700;cursor:pointer;font-family:var(--fb)}
 .ai-edit-btn{position:absolute;top:10px;right:10px;padding:4px 10px;border-radius:6px;border:1px solid var(--border);background:var(--surface2);color:var(--text-dim);font-size:11px;cursor:pointer;font-family:var(--fb)}
 .ai-edit-btn:hover{border-color:var(--primary);color:var(--primary)}
 .ai-edit-area{width:100%;min-height:60px;padding:10px;border-radius:8px;border:1.5px solid var(--primary);background:var(--bg);color:var(--text);font-family:var(--fb);font-size:14px;line-height:1.7;outline:none;resize:vertical;display:none}
@@ -391,7 +401,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
           </div>
           <!-- AIチャット欄（常時表示） -->
           <div class="ai-chat-row" id="aiChatRow" style="display:flex">
-            <input class="ai-chat-input" id="aiChatInput" type="text" placeholder="AIへの指示（例: 要点を整理して、箇条書きに...）">
+            <input class="ai-chat-input" id="aiChatInput" type="text" placeholder="AIへの指示（例: ○○を△△に修正、語尾を統一して...）">
             <button class="ai-chat-mic-btn" id="aiChatMicBtn" onclick="toggleChatVoice('voice')" title="音声で指示" style="flex-shrink:0;width:38px;height:38px;border-radius:10px;border:1.5px solid var(--border);background:var(--surface2);color:var(--text-dim);cursor:pointer;display:flex;align-items:center;justify-content:center">🎤</button>
             <button class="ai-chat-btn" onclick="runAIChat('voice')">送信</button>
           </div>
@@ -427,7 +437,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
       </div>
       <!-- AIチャット欄（常時表示） -->
       <div class="ai-chat-row" id="aiChatRowManual" style="display:flex">
-        <input class="ai-chat-input" id="aiChatInputManual" type="text" placeholder="AIへの指示（例: 要点を整理して、箇条書きに...）">
+        <input class="ai-chat-input" id="aiChatInputManual" type="text" placeholder="AIへの指示（例: ○○を△△に修正、語尾を統一して...）">
         <button class="ai-chat-mic-btn" id="aiChatMicBtnManual" onclick="toggleChatVoice('text')" title="音声で指示" style="flex-shrink:0;width:38px;height:38px;border-radius:10px;border:1.5px solid var(--border);background:var(--surface2);color:var(--text-dim);cursor:pointer;display:flex;align-items:center;justify-content:center">🎤</button>
         <button class="ai-chat-btn" onclick="runAIChat('text')">送信</button>
       </div>
@@ -518,6 +528,16 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
           <button class="dict-add-btn" onclick="addDictWord()">追加</button>
         </div>
         <div class="dict-list" id="dictList"></div>
+      </div>
+    </div>
+    <div class="settings-group" style="margin-top:20px">
+      <div class="settings-group-title">表示設定</div>
+      <div class="setting-row" style="display:flex;align-items:center;justify-content:space-between">
+        <div>
+          <div class="setting-label" style="margin-bottom:0">ライトテーマ</div>
+          <div class="setting-desc" style="margin-bottom:0">明るい環境で見やすくなります</div>
+        </div>
+        <button id="themeToggleBtn" onclick="toggleTheme()" style="padding:8px 16px;border-radius:8px;border:1.5px solid var(--border);background:var(--surface2);color:var(--text);font-size:12px;font-weight:600;cursor:pointer;font-family:var(--fb)">🌙 ダーク</button>
       </div>
     </div>
     <div class="settings-group" style="margin-top:20px">
@@ -911,59 +931,58 @@ async function startRec(){
     mediaRecorder.onstop=async()=>{
       const blob=new Blob(audioChunks,{type:mt||'audio/webm'});
       state.audioBlob=blob; state.audioUrl=URL.createObjectURL(blob); state.audioEl=new Audio(state.audioUrl);
+      const recDuration=state.seconds;
       // マイクストリーム停止（インジケータ消去）
       if(state.stream){try{state.stream.getTracks().forEach(t=>t.stop());}catch(e){}state.stream=null;}
       document.getElementById('playbackBar').classList.add('visible');
-      document.getElementById('playbackTime').textContent=fmtTime(state.seconds);
+      document.getElementById('playbackTime').textContent=fmtTime(recDuration);
+      // 既存テキストを取得（追記用）
+      const ea=document.getElementById('transcriptEditArea');
+      const existingText=ea.value.trim();
       // Whisper APIで文字起こし
       if(state.apiKey.trim()){
-        document.getElementById('liveText').textContent='文字起こし中...';
+        document.getElementById('liveText').textContent=fmtTime(recDuration)+'の音声を文字起こし中...';
         document.getElementById('liveTranscript').classList.add('visible');
         try{
           const result=await transcribeAudio(blob);
-          // タイムスタンプで写真マーカーを挿入
           let text=result.text||'';
           if(state.photoTimestamps.length>0&&result.segments){
             text=insertMarkersWithTimestamps(text,result.segments,state.photoTimestamps);
           }
-          state.transcript=text;
+          // 既存テキストがあれば末尾に追記
+          const combined=existingText?(existingText+'\n'+text):text;
+          state.transcript=combined;
           document.getElementById('liveTranscript').classList.remove('visible');
-          const ea=document.getElementById('transcriptEditArea');
-          ea.value=text; document.getElementById('transcriptEdit').classList.add('visible');
+          ea.value=combined; document.getElementById('transcriptEdit').classList.add('visible');
           if(!text){ea.placeholder='文字起こし結果が空でした。手動入力してください。';}
-          debugLog('Whisper文字起こし完了: '+text.substring(0,80));
+          debugLog('Whisper文字起こし完了 ('+fmtTime(recDuration)+'): '+text.substring(0,80));
+          showToast(fmtTime(recDuration)+'の録音を文字起こししました');
         }catch(err){
           debugLog('Whisperエラー: '+err.message);
           document.getElementById('liveTranscript').classList.remove('visible');
-          const ea=document.getElementById('transcriptEditArea');
-          ea.value=''; ea.placeholder='文字起こしに失敗しました。手動入力してください。';
           document.getElementById('transcriptEdit').classList.add('visible');
+          if(!existingText){ea.placeholder='文字起こしに失敗しました。手動入力してください。';}
           showToast('文字起こし失敗: '+err.message,'error');
         }
       }else{
-        const ea=document.getElementById('transcriptEditArea');
-        ea.value=''; ea.placeholder='APIキーが未設定です。設定タブでOpenAI APIキーを入力してください。';
         document.getElementById('transcriptEdit').classList.add('visible');
+        if(!existingText){ea.placeholder='APIキーが未設定です。設定タブでOpenAI APIキーを入力してください。';}
       }
       updateSave();
     };
     mediaRecorder.start(1000);
     state.isRecording=true; state.seconds=0; state.interimTranscript='';
     state.photoTimestamps=[];
-    // 新しい録音開始時にAI結果をリセット（前回データ混入防止）
-    state.aiCorrected=''; state.aiStructured=null; state.aiStep1Done=false; state.aiStep2Done=false;
     document.getElementById('recCameraRow').style.display='block';
     const existing=document.getElementById('transcriptEditArea').value.trim();
-    state.transcript=existing?existing+'\n':'';
+    state.transcript=existing||'';
     document.getElementById('recBtn').classList.add('recording');
     document.getElementById('recorder').classList.add('is-recording');
     document.getElementById('recLabel').textContent=existing?'追記録音中...':'録音中...';
     document.getElementById('recLabel').classList.add('active');
     document.getElementById('recTimer').classList.add('visible');
     document.getElementById('saveBtn').disabled=true;
-    document.getElementById('aiResult').classList.remove('visible');
     document.getElementById('playbackBar').classList.remove('visible');
-    if(!existing) document.getElementById('transcriptEdit').classList.remove('visible');
     timerInt=setInterval(()=>{state.seconds++;document.getElementById('recTimer').textContent=fmtTime(state.seconds);},1000);
     startWave();
     // 録音中ステータス表示
@@ -1074,7 +1093,7 @@ async function runAIChat(mode){
   const ctx=genba?`対象: ${genba.name}${state.category?'\n分類: '+state.category:''}\n`:'';
   const dictWords=state.dictionary.join('、');
   const dict=dictWords?`専門用語: ${dictWords}\n`:'';
-  const sys=`あなたは現場記録のテキスト修正アシスタントです。\n${ctx}${dict}ユーザーの指示に従ってテキストを修正してください。\nテキスト中の📷1、📷2等の写真マーカーはそのまま維持すること。\nJSON形式のみで返す（バッククォート不要）:\n{"corrected":"修正後テキスト"}`;
+  const sys=`あなたは現場記録のテキスト修正アシスタントです。\n${ctx}${dict}ユーザーの指示に従ってテキストを微調整してください。\n\n重要なルール:\n- 原文の構成・表現・語順をできるだけ維持すること\n- 指示された箇所だけを最小限に修正すること\n- 指示されていない部分は絶対に変えないこと\n- テキスト中の📷1、📷2等の写真マーカーはそのまま維持すること\n\nJSON形式のみで返す（バッククォート不要）:\n{"corrected":"修正後テキスト"}`;
   try{
     const raw=await callAPI(sys,'【現在のテキスト】\n'+currentText+'\n\n【指示】\n'+instruction);
     document.getElementById(procId).style.display='none';
@@ -1909,7 +1928,22 @@ async function generateReport(){
   }
 }
 
+// THEME
+function toggleTheme(){
+  const isLight=document.body.classList.toggle('light-theme');
+  localStorage.setItem('gr_theme',isLight?'light':'dark');
+  document.getElementById('themeToggleBtn').textContent=isLight?'☀️ ライト':'🌙 ダーク';
+  // meta theme-colorも変更
+  document.querySelector('meta[name="theme-color"]').content=isLight?'#f5f5f0':'#141416';
+}
+
 // INIT
+// テーマ復元
+if(localStorage.getItem('gr_theme')==='light'){
+  document.body.classList.add('light-theme');
+  document.querySelector('meta[name="theme-color"]').content='#f5f5f0';
+  setTimeout(()=>{const btn=document.getElementById('themeToggleBtn');if(btn)btn.textContent='☀️ ライト';},0);
+}
 renderDict();updateSave();renderGenbaSelector();
 // Safari のフォーム自動復元対策: 起動時にテキストエリアを強制クリア
 document.getElementById('transcriptEditArea').value='';
