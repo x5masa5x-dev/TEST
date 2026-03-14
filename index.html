@@ -917,7 +917,8 @@ async function startRec(){
     mediaRecorder.onstop=()=>{
       const blob=new Blob(audioChunks,{type:mt||'audio/webm'});
       state.audioBlob=blob; state.audioUrl=URL.createObjectURL(blob); state.audioEl=new Audio(state.audioUrl);
-      // iOS Safari対策: streamは止めない（SpeechRecognitionのaudio-captureエラー防止）
+      // recognition は既に stopSpeech() で abort+null 済み。安全にstream解放できる
+      if(state.stream){try{state.stream.getTracks().forEach(t=>t.stop());}catch(e){}state.stream=null;debugLog('マイクストリーム解放');}
       document.getElementById('playbackBar').classList.add('visible');
       document.getElementById('playbackTime').textContent=fmtTime(state.seconds);
       const ea=document.getElementById('transcriptEditArea');
@@ -1033,13 +1034,8 @@ function stopSpeech(){
     try{recognition.onend=null;recognition.onerror=null;recognition.onresult=null;recognition.abort();}catch(e){}
     recognition=null;
   }
-  // abort完了後、streamを即座に解放（マイクインジケータ消去）
-  // 次回startRecでgetUserMediaにより再取得される
-  if(state.stream){
-    try{state.stream.getTracks().forEach(t=>t.stop());}catch(e){}
-    state.stream=null;
-    debugLog('マイクストリーム解放');
-  }
+  // streamはここでは止めない（同時に止めるとiOSが壊れる）
+  // mediaRecorder.onstop または visibilitychange で解放
 }
 
 // WAVE
