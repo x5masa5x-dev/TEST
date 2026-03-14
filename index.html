@@ -341,7 +341,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
         <span>写真を追加</span>
       </div>
     </div>
-    <div style="font-size:10px;color:var(--text-dim);margin-top:-8px;margin-bottom:12px;line-height:1.5">📷 録音中の撮影 → 確定済みテキストの末尾にマーカー自動挿入<br>📷 録音後の挿入 → テキスト内のカーソル位置にマーカー挿入</div>
+    <div style="font-size:10px;color:var(--text-dim);margin-top:-8px;margin-bottom:12px;line-height:1.5">📷 録音中の撮影 → 文字起こし後に撮影時点の位置にマーカー自動挿入<br>📷 録音後の挿入 → テキスト内のカーソル位置にマーカー挿入</div>
     <input type="file" accept="image/*" id="fileInput" class="sr-only">
 
     <!-- Input mode -->
@@ -367,11 +367,11 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
         <!-- v12: 録音中のカメラボタン（録音中のみ表示） -->
         <div id="recCameraRow" style="display:none;text-align:center;margin:-4px 0 8px">
           <button onclick="document.getElementById('fileInput').click()" style="padding:10px 20px;border-radius:10px;border:1.5px solid var(--primary);background:var(--primary-dim);color:var(--primary);font-size:14px;font-weight:700;cursor:pointer;font-family:var(--fb)">📷 撮影</button>
-          <div style="font-size:10px;color:var(--text-dim);margin-top:6px;line-height:1.5">📷マーカーは<span style="color:var(--text)">確定済みテキストの末尾</span>に入ります<br>（聴き取り中の未確定テキストより前の位置）</div>
+          <div style="font-size:10px;color:var(--text-dim);margin-top:6px;line-height:1.5">📷マーカーは録音停止後の文字起こし時に<span style="color:var(--text)">撮影した時点の位置</span>に自動挿入されます</div>
         </div>
         <div class="live-transcript" id="liveTranscript">
-          <div class="live-transcript-label"><div class="pulse-dot"></div>LIVE TRANSCRIPT</div>
-          <div class="live-transcript-text" id="liveText"></div>
+          <div class="live-transcript-label"><div class="pulse-dot"></div>RECORDING</div>
+          <div class="live-transcript-text" id="liveText">録音中… 停止後に文字起こしされます</div>
         </div>
         <div class="playback-bar" id="playbackBar">
           <button class="play-btn" onclick="togglePlay()"><svg viewBox="0 0 24 24" fill="currentColor"><polygon points="6,3 20,12 6,21"/></svg></button>
@@ -380,10 +380,6 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.51"/></svg>
             録音やり直し
           </button>
-        </div>
-        <div id="iosMicNotice" style="display:none;font-size:10px;color:var(--text-dim);line-height:1.5;padding:8px 12px;margin-top:4px;background:var(--surface2);border-radius:8px">
-          🟠 マイクアイコンが消えない場合 — 文字起こし安定のためマイクを維持しています。バッテリー影響はありません。消すにはSafariを完全終了してください。
-          <span onclick="localStorage.setItem('gr_mic_notice_dismissed','1');document.getElementById('iosMicNotice').style.display='none'" style="color:var(--primary);cursor:pointer;margin-left:4px">非表示にする</span>
         </div>
         <!-- Editable transcript + 2-step AI -->
         <div class="transcript-edit" id="transcriptEdit">
@@ -485,9 +481,9 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
     <div class="settings-group">
       <div class="settings-group-title">API 設定</div>
       <div class="setting-row">
-        <div class="setting-label">Claude API Key</div>
-        <div class="setting-desc">Anthropic の API キー。この端末にのみ保存されます。</div>
-        <input class="setting-input" id="apiKeyInput" type="password" placeholder="sk-ant-...">
+        <div class="setting-label">OpenAI API Key</div>
+        <div class="setting-desc">OpenAI の API キー（文字起こし＋AI処理に使用）。この端末にのみ保存されます。</div>
+        <input class="setting-input" id="apiKeyInput" type="password" placeholder="sk-...">
       </div>
       <div class="setting-row">
         <div class="setting-label">Google Sheets 連携 URL</div>
@@ -614,7 +610,7 @@ let state = {
   aiCorrected:'', aiStructured:null, aiStep1Done:false, aiStep2Done:false,
   records:[], dictionary:[], genbas:[], activeGenbaId:null,
   apiKey:'', gasUrl:'', recType:'日常記録', category:'', mode:'voice',
-  debugMode:false, speechSupported:false,
+  debugMode:false, photoTimestamps:[],
   debugTapCount:0, debugTapTimer:null, modalRecordIdx:-1, modalSearchRec:null,
 };
 try {
@@ -627,9 +623,7 @@ try {
   state.debugMode = localStorage.getItem('gr_debug')==='true';
   state.records.forEach(r=>{if(!r.syncStatus) r.syncStatus='na';});
 } catch(e){}
-let mediaRecorder, audioChunks=[], timerInt, recognition, waveAnim, genbaEditMode='new';
-const SpeechR = window.SpeechRecognition||window.webkitSpeechRecognition;
-state.speechSupported = !!SpeechR;
+let mediaRecorder, audioChunks=[], timerInt, waveAnim, genbaEditMode='new';
 
 function debugLog(msg){
   const el=document.getElementById('debugInfo');
@@ -802,12 +796,11 @@ document.getElementById('fileInput').addEventListener('change',e=>{
   r.onload=ev=>{
     state.photos.push(ev.target.result);
     const photoNum=state.photos.length;
-    // 録音中なら現在のテキスト末尾にマーカー自動挿入（interim含む確定済み部分の末尾）
+    // 録音中ならタイムスタンプを記録（文字起こし後にマーカー挿入）
     if(state.isRecording){
-      // interimが確定していない分は含めず、transcriptの末尾に入れる
-      state.transcript=(state.transcript.trimEnd())+' 📷'+photoNum+' ';
-      document.getElementById('liveText').innerHTML=escapeHtml(state.transcript)+(state.interimTranscript?' <span class="interim">'+escapeHtml(state.interimTranscript)+'</span>':'');
-      showToast('📷'+photoNum+' をテキストに挿入');
+      state.photoTimestamps.push(state.seconds);
+      debugLog('📷'+photoNum+' タイムスタンプ記録: '+state.seconds+'秒');
+      showToast('📷'+photoNum+' を記録（'+fmtTime(state.seconds)+'時点）');
     }
     renderPhotoGrid();updateSave();
   };
@@ -897,14 +890,9 @@ function renderPhotoGrid(){
 async function toggleRec(){if(state.isRecording) stopRec(); else startRec();}
 async function startRec(){
   try{
-    // iOS Safari対策: ストリームを使い回す（停止するとSpeechRecognitionが壊れる）
-    if(!state.stream || !state.stream.active){
-      debugLog('マイクアクセス要求中...');
-      const stream=await navigator.mediaDevices.getUserMedia({audio:true});
-      state.stream=stream; debugLog('マイクOK');
-    } else {
-      debugLog('マイク 既存ストリーム再利用');
-    }
+    debugLog('マイクアクセス要求中...');
+    const stream=await navigator.mediaDevices.getUserMedia({audio:true});
+    state.stream=stream; debugLog('マイクOK');
     let mt='audio/webm';
     if(typeof MediaRecorder.isTypeSupported==='function'){
       if(MediaRecorder.isTypeSupported('audio/webm')) mt='audio/webm';
@@ -914,20 +902,48 @@ async function startRec(){
     const opts=mt?{mimeType:mt}:{};
     mediaRecorder=new MediaRecorder(state.stream,opts); audioChunks=[];
     mediaRecorder.ondataavailable=e=>{if(e.data.size>0) audioChunks.push(e.data);};
-    mediaRecorder.onstop=()=>{
+    mediaRecorder.onstop=async()=>{
       const blob=new Blob(audioChunks,{type:mt||'audio/webm'});
       state.audioBlob=blob; state.audioUrl=URL.createObjectURL(blob); state.audioEl=new Audio(state.audioUrl);
-      // iOS Safari: streamは絶対に止めない（止めるとSpeechRecognitionが永久に壊れる）
+      // マイクストリーム停止（インジケータ消去）
+      if(state.stream){try{state.stream.getTracks().forEach(t=>t.stop());}catch(e){}state.stream=null;}
       document.getElementById('playbackBar').classList.add('visible');
       document.getElementById('playbackTime').textContent=fmtTime(state.seconds);
-      const ea=document.getElementById('transcriptEditArea');
-      const ft=(state.transcript+' '+state.interimTranscript).trim();
-      ea.value=ft||''; document.getElementById('transcriptEdit').classList.add('visible');
-      if(!ft){ea.placeholder='音声認識が動作しませんでした。手動入力してください。';}
+      // Whisper APIで文字起こし
+      if(state.apiKey.trim()){
+        document.getElementById('liveText').textContent='文字起こし中...';
+        document.getElementById('liveTranscript').classList.add('visible');
+        try{
+          const result=await transcribeAudio(blob);
+          // タイムスタンプで写真マーカーを挿入
+          let text=result.text||'';
+          if(state.photoTimestamps.length>0&&result.segments){
+            text=insertMarkersWithTimestamps(text,result.segments,state.photoTimestamps);
+          }
+          state.transcript=text;
+          document.getElementById('liveTranscript').classList.remove('visible');
+          const ea=document.getElementById('transcriptEditArea');
+          ea.value=text; document.getElementById('transcriptEdit').classList.add('visible');
+          if(!text){ea.placeholder='文字起こし結果が空でした。手動入力してください。';}
+          debugLog('Whisper文字起こし完了: '+text.substring(0,80));
+        }catch(err){
+          debugLog('Whisperエラー: '+err.message);
+          document.getElementById('liveTranscript').classList.remove('visible');
+          const ea=document.getElementById('transcriptEditArea');
+          ea.value=''; ea.placeholder='文字起こしに失敗しました。手動入力してください。';
+          document.getElementById('transcriptEdit').classList.add('visible');
+          showToast('文字起こし失敗: '+err.message,'error');
+        }
+      }else{
+        const ea=document.getElementById('transcriptEditArea');
+        ea.value=''; ea.placeholder='APIキーが未設定です。設定タブでOpenAI APIキーを入力してください。';
+        document.getElementById('transcriptEdit').classList.add('visible');
+      }
       updateSave();
     };
     mediaRecorder.start(1000);
     state.isRecording=true; state.seconds=0; state.interimTranscript='';
+    state.photoTimestamps=[];
     // 新しい録音開始時にAI結果をリセット（前回データ混入防止）
     state.aiCorrected=''; state.aiStructured=null; state.aiStep1Done=false; state.aiStep2Done=false;
     document.getElementById('recCameraRow').style.display='block';
@@ -938,106 +954,90 @@ async function startRec(){
     document.getElementById('recLabel').textContent=existing?'追記録音中...':'録音中...';
     document.getElementById('recLabel').classList.add('active');
     document.getElementById('recTimer').classList.add('visible');
-    document.getElementById('saveBtn').disabled=true; // P3
+    document.getElementById('saveBtn').disabled=true;
     document.getElementById('aiResult').classList.remove('visible');
     document.getElementById('playbackBar').classList.remove('visible');
     if(!existing) document.getElementById('transcriptEdit').classList.remove('visible');
     timerInt=setInterval(()=>{state.seconds++;document.getElementById('recTimer').textContent=fmtTime(state.seconds);},1000);
     startWave();
-    if(state.speechSupported){
-      startSpeechSafe();
-    } else{document.getElementById('liveTranscript').classList.add('visible');document.getElementById('liveText').textContent='（自動文字起こし非対応）';}
+    // 録音中ステータス表示
+    document.getElementById('liveTranscript').classList.add('visible');
+    document.getElementById('liveText').textContent='録音中… 停止後に文字起こしされます';
   }catch(err){debugLog('エラー: '+err.message);showToast('マイクへのアクセスを許可してください','error');}
 }
 function stopRec(){
   debugLog('録音停止');state.isRecording=false;clearInterval(timerInt);stopWave();
   document.getElementById('recCameraRow').style.display='none';
-  // stopSpeech(): abort→null + 500ms後にstream解放
-  stopSpeech();
   if(mediaRecorder&&mediaRecorder.state!=='inactive') mediaRecorder.stop();
-  // P2: audio cleanup
+  // P2: audio cleanup (前回分)
   if(state.audioEl){try{state.audioEl.pause();state.audioEl.src='';}catch(e){}}
   if(state.audioUrl){URL.revokeObjectURL(state.audioUrl);state.audioUrl=null;}
   document.getElementById('recBtn').classList.remove('recording');
   document.getElementById('recorder').classList.remove('is-recording');
-  document.getElementById('recLabel').textContent='録音完了（再タップで追記）';
+  document.getElementById('recLabel').textContent='録音完了';
   document.getElementById('recLabel').classList.remove('active');
   document.getElementById('recTimer').classList.remove('visible');
-  document.getElementById('liveTranscript').classList.remove('visible');
-  // iOS: マイクインジケータの説明を初回だけ表示
-  if(/iPad|iPhone|iPod/.test(navigator.userAgent)&&!localStorage.getItem('gr_mic_notice_dismissed')){
-    const n=document.getElementById('iosMicNotice');if(n)n.style.display='block';
-  }
-  updateSave();
+  // liveTranscriptは残す（「文字起こし中...」表示用）
 }
 
-// SPEECH - iOS Safari対策:
-// - streamは絶対に止めない（audio-captureエラー防止）
-// - recognition.abort()で旧インスタンスを終了させてからnull（OSリソース解放）
-// - 毎回 new する（インスタンス再利用するとonresultが発火しない）
-let speechActive=false;
-let speechGen=0;
-
-function startSpeechSafe(){
-  speechActive=true;
-  speechGen++;
-  if(!SpeechR) return;
-  const gen=speechGen;
-  // 旧インスタンスをabortで終了させてから捨てる（streamは生きているのでaudio-captureエラーにならない）
-  if(recognition){
-    try{recognition.onend=null;recognition.onerror=null;recognition.onresult=null;recognition.abort();}catch(e){}
-    recognition=null;
-  }
-  // iOS: abort後に少し待ってから新インスタンスで開始
-  const isIOS=/iPad|iPhone|iPod/.test(navigator.userAgent);
-  setTimeout(()=>{
-    if(gen!==speechGen||!state.isRecording||!speechActive) return;
-    startSpeech(gen);
-  }, isIOS?600:100);
+// ===== WHISPER API =====
+async function transcribeAudio(blob){
+  const key=state.apiKey.trim();
+  if(!key) throw new Error('APIキーが未設定');
+  const dictWords=state.dictionary.join(', ');
+  const genba=getActiveGenba();
+  const prompt=(genba?genba.name+' ':'')+(dictWords||'');
+  const formData=new FormData();
+  formData.append('file',blob,'audio.webm');
+  formData.append('model','whisper-1');
+  formData.append('language','ja');
+  formData.append('response_format','verbose_json');
+  formData.append('timestamp_granularities[]','segment');
+  if(prompt) formData.append('prompt',prompt);
+  debugLog('Whisper API呼び出し中...');
+  const res=await fetch('https://api.openai.com/v1/audio/transcriptions',{
+    method:'POST',
+    headers:{'Authorization':'Bearer '+key},
+    body:formData
+  });
+  const data=await res.json();
+  if(data.error) throw new Error(data.error.message||'Whisper API Error');
+  debugLog('Whisper応答: '+JSON.stringify(data).substring(0,200));
+  return data; // { text, segments: [{start, end, text}, ...] }
 }
 
-function startSpeech(gen){
-  if(!SpeechR||gen!==speechGen) return;
-  recognition=new SpeechR();
-  recognition.lang='ja-JP';
-  recognition.interimResults=true;
-  const isIOS=/iPad|iPhone|iPod/.test(navigator.userAgent);
-  recognition.continuous=!isIOS;
-  debugLog('SpeechRecognition new+start (gen='+gen+')');
-  document.getElementById('liveTranscript').classList.add('visible');
-  document.getElementById('liveText').innerHTML=state.transcript?escapeHtml(state.transcript)+'<span class="interim">聴き取り中...</span>':'<span class="interim">聴き取り中...</span>';
-  recognition.onresult=e=>{
-    if(!speechActive||gen!==speechGen) return;
-    let interim='',final='';
-    for(let i=e.resultIndex;i<e.results.length;i++){const t=e.results[i][0].transcript;if(e.results[i].isFinal) final+=t; else interim+=t;}
-    if(final) state.transcript+=final; state.interimTranscript=interim;
-    document.getElementById('liveText').innerHTML=escapeHtml(state.transcript)+(interim?' <span class="interim">'+escapeHtml(interim)+'</span>':'');
-  };
-  recognition.onerror=e=>{
-    debugLog('音声認識エラー: '+e.error+' (gen='+gen+')');
-    if(e.error==='not-allowed') showToast('音声認識の権限がありません','error');
-  };
-  recognition.onend=()=>{
-    debugLog('音声認識onend (gen='+gen+', current='+speechGen+', active='+speechActive+')');
-    if(gen!==speechGen) return;
-    if(speechActive&&state.isRecording){
-      setTimeout(()=>{
-        if(gen===speechGen&&speechActive&&state.isRecording) startSpeech(gen);
-      },300);
+// タイムスタンプを使って写真マーカーをテキスト内の正しい位置に挿入
+function insertMarkersWithTimestamps(text,segments,timestamps){
+  if(!segments||segments.length===0||!timestamps||timestamps.length===0) return text;
+  // タイムスタンプをソート
+  const sorted=timestamps.map((t,i)=>({sec:t,num:i+1})).sort((a,b)=>a.sec-b.sec);
+  // 各セグメントの文字位置を計算
+  let pos=0;
+  const segPositions=segments.map(seg=>{
+    const idx=text.indexOf(seg.text,pos);
+    const start=idx>=0?idx:pos;
+    pos=start+seg.text.length;
+    return {start:seg.start, end:seg.end, textStart:start, textEnd:pos};
+  });
+  // 各マーカーの挿入位置を決定（後ろから挿入して位置がずれないように）
+  const inserts=[];
+  sorted.forEach(({sec,num})=>{
+    let insertPos=text.length; // デフォルト: 末尾
+    for(let i=0;i<segPositions.length;i++){
+      if(sec<=segPositions[i].end){
+        insertPos=segPositions[i].textEnd;
+        break;
+      }
     }
-  };
-  try{recognition.start();debugLog('音声認識 開始 (gen='+gen+')');}
-  catch(e){debugLog('開始エラー: '+e.message);}
-}
-
-function stopSpeech(){
-  speechActive=false;
-  speechGen++;
-  if(recognition){
-    try{recognition.onend=null;recognition.onerror=null;recognition.onresult=null;recognition.abort();}catch(e){}
-    recognition=null;
-  }
-  // streamは絶対に止めない（iOS Safari: 止めるとSpeechRecognitionが永久に壊れる）
+    inserts.push({pos:insertPos,marker:' 📷'+num+' '});
+  });
+  // 後ろから挿入（位置がずれない）
+  inserts.sort((a,b)=>b.pos-a.pos);
+  let result=text;
+  inserts.forEach(({pos,marker})=>{
+    result=result.substring(0,pos)+marker+result.substring(pos);
+  });
+  return result.trim();
 }
 
 // WAVE
@@ -1221,30 +1221,27 @@ async function runAIChat(mode){
   }
 }
 
-// API call: まず全文で送信、失敗時にリトライ
+// API call: OpenAI Chat API（GPT-4o）
 async function callAPI(sys,content){
   const key=state.apiKey.trim();
-  // 1回目: 全文で送信
   try{
     return await apiCall(key,sys,content);
   }catch(err){
     debugLog('1回目失敗: '+err.message+' → リトライ');
-    // 長文の場合: テキストを前半だけ要約依頼してリトライ
     if(content.length>8000){
       debugLog('長文('+content.length+'文字)→ 圧縮してリトライ');
       const trimmed=content.substring(0,8000)+'...\n（※長文のため一部省略）';
       return await apiCall(key,sys,trimmed);
     }
-    // 短文なら単純リトライ
     await new Promise(r=>setTimeout(r,1000));
     return await apiCall(key,sys,content);
   }
 }
 async function apiCall(key,sys,content){
-  const res=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json','x-api-key':key,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:4096,messages:[{role:'user',content:content}],system:sys})});
+  const res=await fetch('https://api.openai.com/v1/chat/completions',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+key},body:JSON.stringify({model:'gpt-4o',max_tokens:4096,messages:[{role:'system',content:sys},{role:'user',content:content}]})});
   const data=await res.json(); debugLog('API: '+JSON.stringify(data).substring(0,150));
   if(data.error) throw new Error(data.error.message||'API Error');
-  if(data.content&&data.content[0]) return data.content[0].text.trim();
+  if(data.choices&&data.choices[0]&&data.choices[0].message) return data.choices[0].message.content.trim();
   throw new Error('Empty response');
 }
 
@@ -1263,10 +1260,9 @@ function retakeRec(){
   if(state.audioUrl) URL.revokeObjectURL(state.audioUrl);
   if(mediaRecorder&&mediaRecorder.state!=='inactive'){try{mediaRecorder.stop();}catch(e){}}
   mediaRecorder=null; audioChunks=[];
-  // recognition は stopSpeech() で解放（streamは止めない）
-  stopSpeech();
+  if(state.stream){try{state.stream.getTracks().forEach(t=>t.stop());}catch(e){}state.stream=null;}
   state.audioBlob=null;state.audioUrl=null;state.audioEl=null;
-  state.transcript='';state.interimTranscript='';
+  state.transcript='';state.interimTranscript='';state.photoTimestamps=[];
   state.isRecording=false;
   document.getElementById('recCameraRow').style.display='none';
   document.getElementById('playbackBar').classList.remove('visible');
@@ -1286,7 +1282,7 @@ function retakeRec(){
 }
 
 // 全部クリア（録音・写真・AI結果すべて）
-// iOS Safari対策: streamは絶対に止めない（止めるとSpeechRecognitionが永久に壊れる）
+// 全部クリア（録音・写真・AI結果すべて）
 function clearAll(){
   if(state.photos.length>0||state.audioBlob||document.getElementById('transcriptEditArea').value.trim()){
     if(!confirm('録音・写真・AI結果をすべてクリアします。よろしいですか？')) return;
@@ -1296,15 +1292,15 @@ function clearAll(){
     state.isRecording=false;clearInterval(timerInt);stopWave();
     if(mediaRecorder&&mediaRecorder.state!=='inactive'){try{mediaRecorder.stop();}catch(e){}}
   }
-  // SpeechRecognitionだけ安全に終了（streamは止めない）
-  stopSpeech();
+  // マイクストリーム停止
+  if(state.stream){try{state.stream.getTracks().forEach(t=>t.stop());}catch(e){}state.stream=null;}
   // 音声ファイル破棄
   if(state.audioEl){try{state.audioEl.pause();state.audioEl.src='';}catch(e){}}
   if(state.audioUrl) URL.revokeObjectURL(state.audioUrl);
   mediaRecorder=null; audioChunks=[];
   state.audioBlob=null;state.audioUrl=null;state.audioEl=null;
   // データリセット
-  state.photos=[];
+  state.photos=[]; state.photoTimestamps=[];
   state.transcript='';state.interimTranscript='';
   state.aiCorrected='';state.aiStructured=null;state.aiStep1Done=false;state.aiStep2Done=false;
   state.isRecording=false;state.seconds=0;
@@ -1335,7 +1331,6 @@ function clearAll(){
   document.getElementById('recTimer').classList.remove('visible');
   document.getElementById('recTimer').textContent='00:00';
   clearInterval(timerInt);stopWave();
-  const micNotice=document.getElementById('iosMicNotice');if(micNotice)micNotice.style.display='none';
   updateSave();
   showToast('全てクリアしました');
 }
@@ -1346,10 +1341,9 @@ function deleteRec(){
   if(state.audioUrl) URL.revokeObjectURL(state.audioUrl);
   if(mediaRecorder&&mediaRecorder.state!=='inactive'){try{mediaRecorder.stop();}catch(e){}}
   mediaRecorder=null; audioChunks=[];
-  // recognition は stopSpeech() で解放（streamは止めない）
-  stopSpeech();
+  if(state.stream){try{state.stream.getTracks().forEach(t=>t.stop());}catch(e){}state.stream=null;}
   state.audioBlob=null;state.audioUrl=null;state.audioEl=null;
-  state.transcript='';state.interimTranscript='';state.aiCorrected='';state.aiStructured=null;state.aiStep1Done=false;state.aiStep2Done=false;
+  state.transcript='';state.interimTranscript='';state.photoTimestamps=[];state.aiCorrected='';state.aiStructured=null;state.aiStep1Done=false;state.aiStep2Done=false;
   state.isRecording=false;state.seconds=0;
   document.getElementById('recCameraRow').style.display='none';
   ['playbackBar','liveTranscript','transcriptEdit','aiResult','aiProcessing'].forEach(x=>document.getElementById(x).classList.remove('visible'));
@@ -1614,22 +1608,9 @@ async function deleteGenba(){
 // VOICE INPUT (settings)
 let settingsRec=null,activeVBtn=null;
 function toggleVoiceInput(tid,bid){
-  // iOS Safari: 設定の音声入力がメイン録音のSpeechRecognitionと競合して壊れるため無効化
-  const isIOS=/iPad|iPhone|iPod/.test(navigator.userAgent);
-  if(isIOS){showToast('iOSでは音声入力ボタンは使えません。手入力してください','info');return;}
-  const btn=document.getElementById(bid);
-  if(settingsRec&&activeVBtn===bid){stopVoiceInput();return;}
-  if(settingsRec) stopVoiceInput();
-  if(!SpeechR){showToast('音声入力非対応','error');return;}
-  const sr=new SpeechR();sr.lang='ja-JP';sr.interimResults=true;sr.continuous=true;
-  const target=document.getElementById(tid),isTA=target.tagName==='TEXTAREA',base=target.value;
-  btn.classList.add('listening');activeVBtn=bid;settingsRec=sr;
-  const ind=document.getElementById('voiceIndicator_'+tid);if(ind){ind.style.display='block';ind.textContent='🎤 音声入力中...';}
-  let acc='';
-  sr.onresult=e=>{let interim='',nf='';for(let i=e.resultIndex;i<e.results.length;i++){const t=e.results[i][0].transcript;if(e.results[i].isFinal) nf+=t;else interim+=t;}if(nf) acc+=(acc?(isTA?'\n':' '):'')+nf;const s=base?(isTA?'\n':' '):'';const is=(acc||base)?(isTA?'\n':' '):'';target.value=base+(acc?s+acc:'')+(interim?is+interim:'');if(ind){if(interim) ind.textContent='🎤 '+interim;else if(nf) ind.textContent='✓ '+nf;}};
-  sr.onend=()=>{const s=base?(isTA?'\n':' '):'';target.value=base+(acc?s+acc:'');cleanupVI(bid,tid);};
-  sr.onerror=e=>{cleanupVI(bid,tid);if(e.error==='not-allowed') showToast('マイク権限なし','error');};
-  try{sr.start();}catch(e){cleanupVI(bid,tid);}
+  // Web Speech API を削除したため、音声入力ボタンは使用不可
+  showToast('音声入力は利用できません。手入力してください','info');
+  return;
 }
 function stopVoiceInput(){if(settingsRec){try{settingsRec.onend=null;settingsRec.onerror=null;settingsRec.onresult=null;settingsRec.abort();}catch(e){}settingsRec=null;}if(activeVBtn){const b=document.getElementById(activeVBtn);if(b) b.classList.remove('listening');activeVBtn=null;}document.querySelectorAll('[id^="voiceIndicator_"]').forEach(el=>{el.style.display='none';});}
 function cleanupVI(bid,tid){const b=document.getElementById(bid);if(b) b.classList.remove('listening');settingsRec=null;activeVBtn=null;const ind=document.getElementById('voiceIndicator_'+tid);if(ind) setTimeout(()=>{ind.style.display='none';},1200);}
@@ -1949,8 +1930,7 @@ renderDict();updateSave();renderGenbaSelector();
 document.getElementById('transcriptEditArea').value='';
 document.getElementById('manualText').value='';
 document.getElementById('liveText').textContent='';
-debugLog('GENBA REC v13.0 初期化完了');
-debugLog('Speech: '+(state.speechSupported?'対応':'非対応'));
+debugLog('GENBA REC v13.0 初期化完了 (Whisper+GPT-4o)');
 
 // 起動時に対象マスター＋辞書をサーバーから同期
 if(state.gasUrl){setTimeout(loadGenbasFromServer,500);setTimeout(loadDictFromServer,800);}
