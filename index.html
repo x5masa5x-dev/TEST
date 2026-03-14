@@ -1029,8 +1029,7 @@ function stopSpeech(){
     try{recognition.onend=null;recognition.onerror=null;recognition.onresult=null;recognition.abort();}catch(e){}
     recognition=null;
   }
-  // streamはここでは止めない（同時に止めるとiOSが壊れる）
-  // mediaRecorder.onstop または visibilitychange で解放
+  // streamは絶対に止めない（iOS Safari: 止めるとSpeechRecognitionが永久に壊れる）
 }
 
 // WAVE
@@ -1279,23 +1278,45 @@ function retakeRec(){
 }
 
 // 全部クリア（録音・写真・AI結果すべて）
-// iOS Safari対策: streamを完全停止してからリロードし、OSレベルでマイクバグをリセット
+// iOS Safari対策: streamは絶対に止めない（止めるとSpeechRecognitionが永久に壊れる）
 function clearAll(){
   if(state.photos.length>0||state.audioBlob||document.getElementById('transcriptEditArea').value.trim()){
     if(!confirm('録音・写真・AI結果をすべてクリアします。よろしいですか？')) return;
   }
-  // 1. 録音中なら停止
-  if(state.isRecording){state.isRecording=false;clearInterval(timerInt);stopWave();if(mediaRecorder&&mediaRecorder.state!=='inactive'){try{mediaRecorder.stop();}catch(e){}}}
-  // 2. recognition を停止
-  if(recognition){try{recognition.onend=null;recognition.onerror=null;recognition.onresult=null;recognition.abort();}catch(e){}recognition=null;}
-  // 3. マイクストリームを完全に停止（インジケータ消去）
-  if(state.stream){try{state.stream.getTracks().forEach(t=>t.stop());}catch(e){}state.stream=null;}
-  // 4. リロード後に復元したい状態をsessionStorageに退避
-  sessionStorage.setItem('gr_reload_restore',JSON.stringify({
-    recType:state.recType, category:state.category, mode:state.mode, msg:'全てクリアしました'
-  }));
-  // 5. ページを強制リロードしてOSレベルでリセット
-  window.location.reload();
+  // 録音中なら停止
+  if(state.isRecording){
+    state.isRecording=false;clearInterval(timerInt);stopWave();
+    if(mediaRecorder&&mediaRecorder.state!=='inactive'){try{mediaRecorder.stop();}catch(e){}}
+  }
+  // SpeechRecognitionだけ安全に終了（streamは止めない）
+  stopSpeech();
+  // 音声ファイル破棄
+  if(state.audioEl){try{state.audioEl.pause();state.audioEl.src='';}catch(e){}}
+  if(state.audioUrl) URL.revokeObjectURL(state.audioUrl);
+  mediaRecorder=null; audioChunks=[];
+  state.audioBlob=null;state.audioUrl=null;state.audioEl=null;
+  // データリセット
+  state.photos=[];
+  state.transcript='';state.interimTranscript='';
+  state.aiCorrected='';state.aiStructured=null;state.aiStep1Done=false;state.aiStep2Done=false;
+  state.isRecording=false;state.seconds=0;
+  // UIリセット
+  renderPhotoGrid();
+  document.getElementById('recCameraRow').style.display='none';
+  ['playbackBar','liveTranscript','transcriptEdit','aiResult','aiProcessing'].forEach(x=>document.getElementById(x).classList.remove('visible'));
+  document.getElementById('transcriptEditArea').value='';
+  document.getElementById('aiCorrectedText').textContent='';
+  document.getElementById('aiStructured').innerHTML='';document.getElementById('aiStructured').style.display='none';
+  document.getElementById('aiEditArea').style.display='none';
+  document.getElementById('liveText').textContent='';
+  document.getElementById('recLabel').textContent='タップして録音を開始';
+  document.getElementById('recBtn').classList.remove('recording');
+  document.getElementById('recorder').classList.remove('is-recording');
+  document.getElementById('recLabel').classList.remove('active');
+  document.getElementById('recTimer').classList.remove('visible');
+  clearInterval(timerInt);stopWave();
+  updateSave();
+  showToast('全てクリアしました');
 }
 
 // deleteRec: 内部用（全リセット。外部からはretakeRecかclearAllを使う）
@@ -1334,15 +1355,10 @@ async function saveRecord(){
   const genba=getActiveGenba();
   const rec={id:Date.now(),photos:[...state.photos],transcript:text,corrected:state.aiCorrected||text,structured:state.aiStructured,genbaId:state.activeGenbaId||null,context:genba?genba.name:'',category:state.category||'',recType:state.recType,timestamp:new Date().toISOString(),syncStatus:state.gasUrl?'pending':'na'};
   state.records.unshift(rec);persistRecords();
-  // シート送信を待ってからリロード（送信失敗してもローカルには保存済み）
   if(state.gasUrl){try{await sendToSheet(rec);}catch(e){debugLog('送信エラー(保存時): '+e.message);}}
-  // recognition + stream を停止してリロード
-  if(recognition){try{recognition.onend=null;recognition.onerror=null;recognition.onresult=null;recognition.abort();}catch(e){}recognition=null;}
-  if(state.stream){try{state.stream.getTracks().forEach(t=>t.stop());}catch(e){}state.stream=null;}
-  sessionStorage.setItem('gr_reload_restore',JSON.stringify({
-    recType:state.recType, category:state.category, mode:state.mode, msg:'保存しました'
-  }));
-  window.location.reload();
+  resetRecord();
+  saveBtn.textContent='保存する';
+  showToast('保存しました');
 }
 function resetRecord(){
   state.photos=[];renderPhotoGrid();deleteRec();state.seconds=0;
@@ -1908,25 +1924,6 @@ async function generateReport(){
 renderDict();updateSave();renderGenbaSelector();
 debugLog('GENBA REC v13.0 初期化完了');
 debugLog('Speech: '+(state.speechSupported?'対応':'非対応'));
-
-// リロード後の状態復元（clearAll / saveRecord からのリロード時）
-try{
-  const restoreData=sessionStorage.getItem('gr_reload_restore');
-  if(restoreData){
-    sessionStorage.removeItem('gr_reload_restore');
-    const parsed=JSON.parse(restoreData);
-    if(parsed.mode) setMode(parsed.mode);
-    if(parsed.recType) setRecType(parsed.recType);
-    if(parsed.category){
-      state.category=parsed.category;
-      const catSelect=document.getElementById('categorySelect');
-      if(catSelect) catSelect.value=parsed.category;
-      onCategoryChange(parsed.category);
-    }
-    if(parsed.msg) setTimeout(()=>showToast(parsed.msg),300);
-    debugLog('リロード復元完了: '+parsed.msg);
-  }
-}catch(e){debugLog('復元エラー: '+e.message);}
 
 // 起動時に対象マスター＋辞書をサーバーから同期
 if(state.gasUrl){setTimeout(loadGenbasFromServer,500);setTimeout(loadDictFromServer,800);}
