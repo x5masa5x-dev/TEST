@@ -830,9 +830,9 @@ document.getElementById('fileInput').addEventListener('change',e=>{
     const photoNum=state.photos.length;
     // 録音中ならタイムスタンプを記録（文字起こし後にマーカー挿入）
     if(state.isRecording){
-      state.photoTimestamps.push(state.seconds);
-      debugLog('📷'+photoNum+' タイムスタンプ記録: '+state.seconds+'秒');
-      showToast('📷'+photoNum+' を記録（'+fmtTime(state.seconds)+'時点）');
+      state.photoTimestamps.push({sec:state.seconds, num:state.photos.length});
+      debugLog('📷'+state.photos.length+' タイムスタンプ記録: '+state.seconds+'秒');
+      showToast('📷'+state.photos.length+' を記録（'+fmtTime(state.seconds)+'時点）');
     }
     renderPhotoGrid();updateSave();
   };
@@ -1048,8 +1048,8 @@ async function transcribeAudio(blob){
 // タイムスタンプを使って写真マーカーをテキスト内の正しい位置に挿入
 function insertMarkersWithTimestamps(text,segments,timestamps){
   if(!segments||segments.length===0||!timestamps||timestamps.length===0) return text;
-  // タイムスタンプをソート
-  const sorted=timestamps.map((t,i)=>({sec:t,num:i+1})).sort((a,b)=>a.sec-b.sec);
+  // タイムスタンプをソート（{sec,num}形式）
+  const sorted=[...timestamps].sort((a,b)=>a.sec-b.sec);
   // 各セグメントの文字位置を計算
   let pos=0;
   const segPositions=segments.map(seg=>{
@@ -1391,6 +1391,7 @@ function clearAll(){
   clearInterval(timerInt);stopWave();
   document.getElementById('audioRescueBar').style.display='none';
   updateSave();
+  pendingRec=null;
   showToast('全てクリアしました');
 }
 
@@ -1419,16 +1420,25 @@ function deleteRec(){
 }
 
 // SAVE
+let isSaving=false;
+let pendingRec=null; // 送信失敗時の再試行用
 async function saveRecord(){
+  if(isSaving){showToast('送信中です。しばらくお待ちください','info');return;}
   if(state.isRecording){showToast('録音を停止してから保存','error');return;}
-  let text=state.mode==='voice'?(document.getElementById('transcriptEditArea').value.trim()||state.transcript):document.getElementById('manualText').value.trim();
-  if(text&&!state.aiCorrected&&!state.aiStructured){if(!confirm('AI処理を実行していません。このまま保存しますか？')) return;}
-  // 保存中UI
   const saveBtn=document.getElementById('saveBtn');
   saveBtn.disabled=true;saveBtn.textContent='保存中...';
-  const genba=getActiveGenba();
-  const rec={id:Date.now(),photos:[...state.photos],transcript:text,corrected:state.aiCorrected||text,structured:state.aiStructured,genbaId:state.activeGenbaId||null,context:genba?genba.name:'',category:state.category||'',recType:state.recType,timestamp:new Date().toISOString(),syncStatus:state.gasUrl?'pending':'na'};
-  state.records.unshift(rec);persistRecords();
+  isSaving=true;
+  let rec;
+  if(pendingRec){
+    // 再試行: 既存のrecを使う（重複防止）
+    rec=pendingRec;
+  }else{
+    let text=state.mode==='voice'?(document.getElementById('transcriptEditArea').value.trim()||state.transcript):document.getElementById('manualText').value.trim();
+    if(text&&!state.aiCorrected&&!state.aiStructured){if(!confirm('AI処理を実行していません。このまま保存しますか？')){isSaving=false;saveBtn.disabled=false;saveBtn.textContent='保存する';return;}}
+    const genba=getActiveGenba();
+    rec={id:Date.now(),photos:[...state.photos],transcript:text,corrected:state.aiCorrected||text,structured:state.aiStructured,genbaId:state.activeGenbaId||null,context:genba?genba.name:'',category:state.category||'',recType:state.recType,timestamp:new Date().toISOString(),syncStatus:state.gasUrl?'pending':'na'};
+    state.records.unshift(rec);persistRecords();
+  }
   let sendOk=true;
   if(state.gasUrl){
     try{await sendToSheet(rec);}
@@ -1438,12 +1448,14 @@ async function saveRecord(){
       showToast('⚠️ 送信失敗: '+e.message+'\nデータは端末に残っています','error');
     }
   }
+  isSaving=false;
   if(sendOk){
+    pendingRec=null;
     resetRecord();
     saveBtn.textContent='保存する';
     showToast('保存しました');
   }else{
-    // 失敗時: データを画面に残す。再試行可能にする
+    pendingRec=rec; // 再試行用に保持
     saveBtn.disabled=false;saveBtn.textContent='保存する（再試行）';
   }
 }
