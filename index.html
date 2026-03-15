@@ -386,10 +386,15 @@ body.light-theme::before{background:none}
         <div class="playback-bar" id="playbackBar">
           <button class="play-btn" onclick="togglePlay()"><svg viewBox="0 0 24 24" fill="currentColor"><polygon points="6,3 20,12 6,21"/></svg></button>
           <div class="playback-info"><div class="playback-info-label">録音完了</div><div class="playback-info-time" id="playbackTime">00:00</div></div>
-          <button class="playback-delete" onclick="retakeRec()" title="録音だけやり直す（写真・AI結果は残る）" style="display:flex;align-items:center;gap:4px;font-size:11px;padding:6px 10px;border-radius:8px;border:1px solid var(--border);color:var(--text-dim);background:transparent;cursor:pointer;font-family:var(--fb)">
+          <button class="playback-delete" onclick="retakeRec()" title="最後の録音を取り消す" style="display:flex;align-items:center;gap:4px;font-size:11px;padding:6px 10px;border-radius:8px;border:1px solid var(--border);color:var(--text-dim);background:transparent;cursor:pointer;font-family:var(--fb)">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.51"/></svg>
-            録音やり直し
+            取り消し
           </button>
+        </div>
+        <!-- 録音データ救済バー（Whisper失敗時 or 常時） -->
+        <div id="audioRescueBar" style="display:none;margin-top:6px;gap:6px;flex-wrap:wrap">
+          <button onclick="retryWhisper()" id="retryWhisperBtn" style="display:none;padding:6px 12px;border-radius:8px;border:1px solid var(--amber);background:var(--amber-dim);color:var(--amber);font-size:11px;font-weight:600;cursor:pointer;font-family:var(--fb)">🔄 再送信</button>
+          <button onclick="downloadAudio()" style="padding:6px 12px;border-radius:8px;border:1px solid var(--border);background:var(--surface2);color:var(--text-dim);font-size:11px;cursor:pointer;font-family:var(--fb)">💾 録音データ保存</button>
         </div>
         <!-- Editable transcript + AI chat + structured -->
         <div class="transcript-edit" id="transcriptEdit">
@@ -579,7 +584,8 @@ body.light-theme::before{background:none}
       <div style="margin-top:8px">
         <div style="font-size:11px;color:var(--text-dim);margin-bottom:6px">AIへの指示（任意）</div>
         <div class="ai-chat-row" style="display:flex">
-          <input class="ai-chat-input" id="modalChatInput" type="text" placeholder="例: 手順をわかりやすく整理して、もっと詳しく...">
+          <input class="ai-chat-input" id="modalChatInput" type="text" placeholder="例: ○○を△△に修正、語尾を統一して...">
+          <button class="ai-chat-mic-btn" id="modalChatMicBtn" onclick="toggleChatVoice('modal')" title="音声で指示" style="flex-shrink:0;width:38px;height:38px;border-radius:10px;border:1.5px solid var(--border);background:var(--surface2);color:var(--text-dim);cursor:pointer;display:flex;align-items:center;justify-content:center">🎤</button>
           <button class="ai-chat-btn" onclick="runModalChat()">送信</button>
         </div>
       </div>
@@ -636,7 +642,7 @@ let state = {
   aiCorrected:'', aiStructured:null, aiStep1Done:false, aiStep2Done:false,
   records:[], dictionary:[], genbas:[], activeGenbaId:null,
   apiKey:'', gasUrl:'', recType:'日常記録', category:'', mode:'voice',
-  debugMode:false, photoTimestamps:[],
+  debugMode:false, photoTimestamps:[], textBeforeLastRec:'',
   debugTapCount:0, debugTapTimer:null, modalRecordIdx:-1, modalSearchRec:null,
 };
 try {
@@ -957,12 +963,18 @@ async function startRec(){
           if(!text){ea.placeholder='文字起こし結果が空でした。手動入力してください。';}
           debugLog('Whisper文字起こし完了 ('+fmtTime(recDuration)+'): '+text.substring(0,80));
           showToast(fmtTime(recDuration)+'の録音を文字起こししました');
+          // 救済バー: ダウンロードのみ
+          document.getElementById('audioRescueBar').style.display='flex';
+          document.getElementById('retryWhisperBtn').style.display='none';
         }catch(err){
           debugLog('Whisperエラー: '+err.message);
           document.getElementById('liveTranscript').classList.remove('visible');
           document.getElementById('transcriptEdit').classList.add('visible');
           if(!existingText){ea.placeholder='文字起こしに失敗しました。手動入力してください。';}
           showToast('文字起こし失敗: '+err.message,'error');
+          // 救済バー: 再送信+ダウンロード
+          document.getElementById('audioRescueBar').style.display='flex';
+          document.getElementById('retryWhisperBtn').style.display='inline-block';
         }
       }else{
         document.getElementById('transcriptEdit').classList.add('visible');
@@ -975,6 +987,7 @@ async function startRec(){
     state.photoTimestamps=[];
     document.getElementById('recCameraRow').style.display='block';
     const existing=document.getElementById('transcriptEditArea').value.trim();
+    state.textBeforeLastRec=existing||''; // 最後の録音取り消し用
     state.transcript=existing||'';
     document.getElementById('recBtn').classList.add('recording');
     document.getElementById('recorder').classList.add('is-recording');
@@ -983,6 +996,7 @@ async function startRec(){
     document.getElementById('recTimer').classList.add('visible');
     document.getElementById('saveBtn').disabled=true;
     document.getElementById('playbackBar').classList.remove('visible');
+    document.getElementById('audioRescueBar').style.display='none';
     timerInt=setInterval(()=>{state.seconds++;document.getElementById('recTimer').textContent=fmtTime(state.seconds);},1000);
     startWave();
     // 録音中ステータス表示
@@ -1069,6 +1083,43 @@ function insertMarkersWithTimestamps(text,segments,timestamps){
 function startWave(){const c=document.getElementById('waveContainer');c.classList.add('visible');c.innerHTML='';for(let i=0;i<24;i++){const b=document.createElement('div');b.className='wave-bar';b.style.height='4px';c.appendChild(b);}waveAnim=setInterval(()=>{c.querySelectorAll('.wave-bar').forEach(b=>{b.style.height=(Math.random()*32+4)+'px';});},120);}
 function stopWave(){clearInterval(waveAnim);document.getElementById('waveContainer').classList.remove('visible');}
 
+// 録音データ救済
+async function retryWhisper(){
+  if(!state.audioBlob){showToast('録音データがありません','error');return;}
+  if(!state.apiKey.trim()){showToast('APIキーを設定してください','error');return;}
+  showToast('再送信中...');
+  document.getElementById('liveText').textContent='再送信中...';
+  document.getElementById('liveTranscript').classList.add('visible');
+  try{
+    const result=await transcribeAudio(state.audioBlob);
+    let text=result.text||'';
+    if(state.photoTimestamps.length>0&&result.segments){
+      text=insertMarkersWithTimestamps(text,result.segments,state.photoTimestamps);
+    }
+    const ea=document.getElementById('transcriptEditArea');
+    const existingText=state.textBeforeLastRec||'';
+    const combined=existingText?(existingText+'\n'+text):text;
+    state.transcript=combined;
+    ea.value=combined;
+    document.getElementById('liveTranscript').classList.remove('visible');
+    document.getElementById('transcriptEdit').classList.add('visible');
+    document.getElementById('retryWhisperBtn').style.display='none';
+    showToast('再送信成功');
+  }catch(err){
+    document.getElementById('liveTranscript').classList.remove('visible');
+    showToast('再送信失敗: '+err.message,'error');
+  }
+}
+function downloadAudio(){
+  if(!state.audioBlob){showToast('録音データがありません','error');return;}
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(state.audioBlob);
+  const ext=state.audioBlob.type.includes('mp4')?'m4a':'webm';
+  a.download='genba-rec-'+new Date().toISOString().slice(0,19).replace(/[T:]/g,'-')+'.'+ext;
+  a.click();
+  showToast('録音データを保存しました');
+}
+
 // ===== AI =====
 function getTextForAI(mode){return mode==='voice'?document.getElementById('transcriptEditArea').value.trim():document.getElementById('manualText').value.trim();}
 function getTextAreaId(mode){return mode==='voice'?'transcriptEditArea':'manualText';}
@@ -1114,8 +1165,8 @@ async function runAIChat(mode){
 // 🎤チャット音声入力: 短い録音→Whisper→指示テキスト化→送信
 let chatVoiceRecorder=null, chatVoiceChunks=[], chatVoiceStream=null;
 function toggleChatVoice(mode){
-  const btnId=mode==='voice'?'aiChatMicBtn':'aiChatMicBtnManual';
-  const inputId=mode==='voice'?'aiChatInput':'aiChatInputManual';
+  const btnId=mode==='voice'?'aiChatMicBtn':mode==='text'?'aiChatMicBtnManual':'modalChatMicBtn';
+  const inputId=mode==='voice'?'aiChatInput':mode==='text'?'aiChatInputManual':'modalChatInput';
   const btn=document.getElementById(btnId);
   // 録音中なら停止
   if(chatVoiceRecorder&&chatVoiceRecorder.state!=='inactive'){
@@ -1260,7 +1311,7 @@ function toggleAIEdit(mode){
 
 // PLAYBACK
 function togglePlay(){if(!state.audioEl) return;if(state.audioEl.paused) state.audioEl.play();else{state.audioEl.pause();state.audioEl.currentTime=0;}}
-// 録音だけやり直す（写真・AI結果・分類・テキストは保持）
+// 最後の録音だけ取り消し（それ以前のテキスト・写真・AI結果は保持）
 function retakeRec(){
   if(state.audioEl){try{state.audioEl.pause();state.audioEl.src='';}catch(e){}}
   if(state.audioUrl) URL.revokeObjectURL(state.audioUrl);
@@ -1268,23 +1319,25 @@ function retakeRec(){
   mediaRecorder=null; audioChunks=[];
   if(state.stream){try{state.stream.getTracks().forEach(t=>t.stop());}catch(e){}state.stream=null;}
   state.audioBlob=null;state.audioUrl=null;state.audioEl=null;
-  state.transcript='';state.interimTranscript='';state.photoTimestamps=[];
+  state.photoTimestamps=[];
   state.isRecording=false;
+  // 最後の録音前のテキストに戻す
+  const ea=document.getElementById('transcriptEditArea');
+  ea.value=state.textBeforeLastRec||'';
+  state.transcript=state.textBeforeLastRec||'';
   document.getElementById('recCameraRow').style.display='none';
   document.getElementById('playbackBar').classList.remove('visible');
   document.getElementById('liveTranscript').classList.remove('visible');
-  document.getElementById('transcriptEdit').classList.remove('visible');
-  document.getElementById('transcriptEditArea').value='';
-  document.getElementById('liveText').textContent='';
-  document.getElementById('recLabel').textContent='タップして録音を開始';
+  if(ea.value) document.getElementById('transcriptEdit').classList.add('visible');
+  document.getElementById('recLabel').textContent=ea.value?'録音完了（再タップで追記）':'タップして録音を開始';
   document.getElementById('recBtn').classList.remove('recording');
   document.getElementById('recorder').classList.remove('is-recording');
   document.getElementById('recLabel').classList.remove('active');
   document.getElementById('recTimer').classList.remove('visible');
   clearInterval(timerInt);stopWave();
-  // AI結果・写真はそのまま保持
+  document.getElementById('audioRescueBar').style.display='none';
   updateSave();
-  showToast('録音をやり直します（写真・AI結果は保持）','info');
+  showToast('最後の録音を取り消しました','info');
 }
 
 // 全部クリア（録音・写真・AI結果すべて）
@@ -1336,6 +1389,7 @@ function clearAll(){
   document.getElementById('recTimer').classList.remove('visible');
   document.getElementById('recTimer').textContent='00:00';
   clearInterval(timerInt);stopWave();
+  document.getElementById('audioRescueBar').style.display='none';
   updateSave();
   showToast('全てクリアしました');
 }
@@ -1426,9 +1480,28 @@ document.getElementById('transcriptEditArea')?.addEventListener('input',updateSa
 
 // (v13: renderHistory・openModal は履歴タブ削除に伴い削除済み)
 
-// MODAL (検索モーダル用の閉じる・削除のみ残す)
+// MODAL (検索モーダル用の閉じる・削除)
 function closeModal(){document.getElementById('modal').classList.remove('open');document.body.style.overflow='';}
-function deleteRecord(){if(state.modalRecordIdx<0) return;if(!confirm('この記録を削除しますか？')) return;state.records.splice(state.modalRecordIdx,1);persistRecords();closeModal();showToast('削除しました');}
+async function deleteRecord(){
+  // 検索モーダルからの削除（スプレッドシート）
+  if(state.modalSearchRec){
+    const rec=state.modalSearchRec;
+    if(!rec._row){showToast('行番号が不明です','error');return;}
+    if(!confirm('この記録をスプレッドシートから削除しますか？\nこの操作は取り消せません。')) return;
+    if(!state.gasUrl){showToast('GAS URLを設定してください','error');return;}
+    try{
+      showToast('削除中...');
+      const result=await gasPost({_action:'delete_row',row:rec._row});
+      if(result.success){closeModal();showToast('削除しました');runSearch();}
+      else showToast('削除失敗: '+(result.message||''),'error');
+    }catch(err){showToast('通信エラー: '+err.message,'error');}
+    return;
+  }
+  // ローカル記録の削除（フォールバック）
+  if(state.modalRecordIdx<0) return;
+  if(!confirm('この記録を削除しますか？')) return;
+  state.records.splice(state.modalRecordIdx,1);persistRecords();closeModal();showToast('削除しました');
+}
 
 // (v13: 旧追記UIは削除。検索モーダルの修正はmodalEditArea系を使用)
 // DICT
@@ -1810,7 +1883,7 @@ function openSearchModal(rec){
   state.modalRecordIdx=-1;
   state.modalSearchRec=rec;
   // 新UI: 編集エリアをリセット
-  document.querySelector('.modal-delete').style.display='none';
+  document.querySelector('.modal-delete').style.display='block';
   document.getElementById('modalEditToggleBtn').style.display='block';
   document.getElementById('modalEditArea').style.display='none';
   document.getElementById('modalEditText').value=text;
