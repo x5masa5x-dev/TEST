@@ -823,7 +823,7 @@ function deleteCategory(){
 // PHOTO
 document.getElementById('fileInput').addEventListener('change',e=>{
   const file=e.target.files[0]; if(!file) return;
-  if(state.photos.length>=MAX_PHOTOS){showToast('写真は'+MAX_PHOTOS+'枚まで','error');return;}
+  if(state.photos.filter(p=>p!==null).length>=MAX_PHOTOS){showToast('写真は'+MAX_PHOTOS+'枚まで','error');return;}
   const r=new FileReader();
   r.onload=ev=>{
     state.photos.push(ev.target.result);
@@ -839,32 +839,29 @@ document.getElementById('fileInput').addEventListener('change',e=>{
   r.readAsDataURL(file); e.target.value='';
 });
 function removePhoto(i){
-  const removedNum=i+1;
-  state.photos.splice(i,1);
-  // マーカー番号を振り直す（テキスト内のマーカーも更新）
-  renumberPhotoMarkers();
+  // 欠番方式: 配列から削除せずnullにする（📷番号を維持）
+  state.photos[i]=null;
   renderPhotoGrid();updateSave();
 }
 // v12: カーソル位置に写真マーカーを挿入
 function insertPhotoMarker(textareaId){
-  if(state.photos.length===0){
+  const activePhotos=state.photos.map((p,i)=>({data:p,num:i+1})).filter(x=>x.data!==null);
+  if(activePhotos.length===0){
     showToast('先に写真を追加してください','error');
     document.getElementById('fileInput').click();
     return;
   }
-  // 写真が1枚なら即挿入、複数なら選択
-  if(state.photos.length===1){
-    doInsertMarker(textareaId,1);
+  if(activePhotos.length===1){
+    doInsertMarker(textareaId,activePhotos[0].num);
   }else{
-    // 写真選択ポップアップ
     const existing=document.getElementById('photoPickerOverlay');
     if(existing) existing.remove();
     const overlay=document.createElement('div');
     overlay.id='photoPickerOverlay';
     overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:400;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px)';
     let html='<div style="background:var(--surface);border-radius:12px;padding:16px;max-width:320px;width:90%"><div style="font-size:13px;font-weight:600;margin-bottom:12px;color:var(--text)">挿入する写真を選択</div><div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px">';
-    state.photos.forEach((p,i)=>{
-      html+='<div onclick="doInsertMarker(\''+textareaId+'\','+(i+1)+');document.getElementById(\'photoPickerOverlay\').remove()" style="cursor:pointer;border-radius:8px;overflow:hidden;aspect-ratio:1;position:relative;border:2px solid var(--border)"><img src="'+p+'" style="width:100%;height:100%;object-fit:cover"><div style="position:absolute;bottom:2px;left:2px;background:rgba(0,0,0,.8);color:var(--primary);font-size:10px;padding:1px 5px;border-radius:4px;font-weight:700">📷'+(i+1)+'</div></div>';
+    activePhotos.forEach(({data,num})=>{
+      html+='<div onclick="doInsertMarker(\''+textareaId+'\','+num+');document.getElementById(\'photoPickerOverlay\').remove()" style="cursor:pointer;border-radius:8px;overflow:hidden;aspect-ratio:1;position:relative;border:2px solid var(--border)"><img src="'+data+'" style="width:100%;height:100%;object-fit:cover"><div style="position:absolute;bottom:2px;left:2px;background:rgba(0,0,0,.8);color:var(--primary);font-size:10px;padding:1px 5px;border-radius:4px;font-weight:700">📷'+num+'</div></div>';
     });
     html+='</div><button onclick="document.getElementById(\'photoPickerOverlay\').remove()" style="width:100%;margin-top:12px;padding:10px;border-radius:8px;border:1px solid var(--border);background:transparent;color:var(--text-dim);font-size:12px;cursor:pointer">キャンセル</button></div>';
     overlay.innerHTML=html;
@@ -885,37 +882,16 @@ function doInsertMarker(textareaId,num){
   showToast('📷'+num+' を挿入しました');
 }
 
-// v12: 写真マーカーの番号振り直し
-function renumberPhotoMarkers(){
-  const areas=['transcriptEditArea','manualText'];
-  areas.forEach(id=>{
-    const el=document.getElementById(id);
-    if(!el) return;
-    // 全マーカーを一旦プレースホルダに
-    let text=el.value;
-    text=text.replace(/📷\d+/g,m=>'__PHOTO_MARKER__');
-    // 順番に振り直し
-    let num=0;
-    text=text.replace(/__PHOTO_MARKER__/g,()=>{num++;return '📷'+num;});
-    el.value=text;
-  });
-  // stateのtranscriptとaiCorrectedも更新
-  if(state.transcript){
-    let t=state.transcript.replace(/📷\d+/g,'__PHOTO_MARKER__');
-    let n=0;t=t.replace(/__PHOTO_MARKER__/g,()=>{n++;return '📷'+n;});
-    state.transcript=t;
-  }
-  if(state.aiCorrected){
-    let t=state.aiCorrected.replace(/📷\d+/g,'__PHOTO_MARKER__');
-    let n=0;t=t.replace(/__PHOTO_MARKER__/g,()=>{n++;return '📷'+n;});
-    state.aiCorrected=t;
-  }
-}
+// (renumberPhotoMarkers削除: 欠番方式のため振り直し不要)
 function renderPhotoGrid(){
   const g=document.getElementById('photoGrid'),c=document.getElementById('photoCount');g.innerHTML='';
-  state.photos.forEach((p,i)=>{const d=document.createElement('div');d.className='photo-grid-item';d.innerHTML=`<img src="${p}"><div style="position:absolute;bottom:4px;left:4px;background:rgba(0,0,0,.7);color:var(--primary);font-size:10px;padding:1px 6px;border-radius:4px;font-weight:700">📷${i+1}</div><button class="photo-grid-remove" onclick="event.stopPropagation();removePhoto(${i})">✕</button>`;g.appendChild(d);});
-  if(state.photos.length<MAX_PHOTOS){const a=document.createElement('div');a.className='photo-add-btn';a.onclick=()=>document.getElementById('fileInput').click();a.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg><span>写真を追加</span>';g.appendChild(a);}
-  if(state.photos.length>0){c.textContent='写真: '+state.photos.length+' / '+MAX_PHOTOS;c.style.display='block';}else{c.style.display='none';}
+  const activeCount=state.photos.filter(p=>p!==null).length;
+  state.photos.forEach((p,i)=>{
+    if(p===null) return; // 欠番スキップ
+    const d=document.createElement('div');d.className='photo-grid-item';d.innerHTML=`<img src="${p}"><div style="position:absolute;bottom:4px;left:4px;background:rgba(0,0,0,.7);color:var(--primary);font-size:10px;padding:1px 6px;border-radius:4px;font-weight:700">📷${i+1}</div><button class="photo-grid-remove" onclick="event.stopPropagation();removePhoto(${i})">✕</button>`;g.appendChild(d);
+  });
+  if(activeCount<MAX_PHOTOS){const a=document.createElement('div');a.className='photo-add-btn';a.onclick=()=>document.getElementById('fileInput').click();a.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg><span>写真を追加</span>';g.appendChild(a);}
+  if(activeCount>0){c.textContent='写真: '+activeCount+' / '+MAX_PHOTOS;c.style.display='block';}else{c.style.display='none';}
 }
 
 // RECORDING
@@ -1436,7 +1412,7 @@ async function saveRecord(){
     let text=state.mode==='voice'?(document.getElementById('transcriptEditArea').value.trim()||state.transcript):document.getElementById('manualText').value.trim();
     if(text&&!state.aiCorrected&&!state.aiStructured){if(!confirm('AI処理を実行していません。このまま保存しますか？')){isSaving=false;saveBtn.disabled=false;saveBtn.textContent='保存する';return;}}
     const genba=getActiveGenba();
-    rec={id:Date.now(),photos:[...state.photos],transcript:text,corrected:state.aiCorrected||text,structured:state.aiStructured,genbaId:state.activeGenbaId||null,context:genba?genba.name:'',category:state.category||'',recType:state.recType,timestamp:new Date().toISOString(),syncStatus:state.gasUrl?'pending':'na'};
+    rec={id:Date.now(),photos:state.photos.filter(p=>p!==null),transcript:text,corrected:state.aiCorrected||text,structured:state.aiStructured,genbaId:state.activeGenbaId||null,context:genba?genba.name:'',category:state.category||'',recType:state.recType,timestamp:new Date().toISOString(),syncStatus:state.gasUrl?'pending':'na'};
     state.records.unshift(rec);persistRecords();
   }
   let sendOk=true;
