@@ -1429,10 +1429,23 @@ async function saveRecord(){
   const genba=getActiveGenba();
   const rec={id:Date.now(),photos:[...state.photos],transcript:text,corrected:state.aiCorrected||text,structured:state.aiStructured,genbaId:state.activeGenbaId||null,context:genba?genba.name:'',category:state.category||'',recType:state.recType,timestamp:new Date().toISOString(),syncStatus:state.gasUrl?'pending':'na'};
   state.records.unshift(rec);persistRecords();
-  if(state.gasUrl){try{await sendToSheet(rec);}catch(e){debugLog('送信エラー(保存時): '+e.message);}}
-  resetRecord();
-  saveBtn.textContent='保存する';
-  showToast('保存しました');
+  let sendOk=true;
+  if(state.gasUrl){
+    try{await sendToSheet(rec);}
+    catch(e){
+      sendOk=false;
+      debugLog('送信エラー(保存時): '+e.message);
+      showToast('⚠️ 送信失敗: '+e.message+'\nデータは端末に残っています','error');
+    }
+  }
+  if(sendOk){
+    resetRecord();
+    saveBtn.textContent='保存する';
+    showToast('保存しました');
+  }else{
+    // 失敗時: データを画面に残す。再試行可能にする
+    saveBtn.disabled=false;saveBtn.textContent='保存する（再試行）';
+  }
 }
 function resetRecord(){
   state.photos=[];renderPhotoGrid();deleteRec();state.seconds=0;
@@ -1549,17 +1562,23 @@ function exportData(){const d={records:state.records,dictionary:state.dictionary
 async function sendToSheet(rec){
   if(!state.gasUrl) return;
   const genba=state.genbas.find(g=>g.id===rec.genbaId);
-  // genbaIdでの検索に失敗した場合はrec自体に保存済みの名前を使う
-  const subject=genba?genba.name:(rec.context||'');
   const payload={subject:genba?genba.name:(rec.context||''),subjectDetail:'',type:rec.recType||'日常記録',category:rec.category||'',transcript:rec.transcript||'',corrected:rec.corrected||'',structured:rec.structured?JSON.stringify(rec.structured):'',photos:rec.photos||[]};
+  const payloadSize=JSON.stringify(payload).length;
+  debugLog('シート送信中... ('+Math.round(payloadSize/1024)+'KB, 写真'+((rec.photos||[]).length)+'枚)');
   try{
-    debugLog('シート送信中...');
     const res=await fetch(state.gasUrl,{method:'POST',headers:{'Content-Type':'text/plain'},body:JSON.stringify(payload)});
-    const result=await res.json().catch(()=>({success:true}));
-    debugLog('送信結果: '+JSON.stringify(result));
+    if(!res.ok) throw new Error('HTTP '+res.status);
+    const text=await res.text();
+    let result;
+    try{result=JSON.parse(text);}catch(e){throw new Error('応答パース失敗（GASタイムアウトの可能性）');}
+    debugLog('送信結果: '+JSON.stringify(result).substring(0,150));
     if(result.success!==false){rec.syncStatus='sent';persistRecords();autoCleanup();showToast('スプレッドシートに送信しました');}
-    else{rec.syncStatus='failed';persistRecords();showToast('シート送信エラー','error');}
-  }catch(err){debugLog('送信エラー: '+err.message);rec.syncStatus='failed';persistRecords();showToast('シート送信に失敗（ローカルには保存済み）','error');}
+    else{rec.syncStatus='failed';persistRecords();throw new Error(result.message||'GASエラー');}
+  }catch(err){
+    debugLog('送信エラー: '+err.message);
+    rec.syncStatus='failed';persistRecords();
+    throw err; // 呼び出し元でハンドリング
+  }
 }
 async function testGas(){
   const url=document.getElementById('gasUrlInput').value.trim();
