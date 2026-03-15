@@ -1546,26 +1546,69 @@ function loadSettings(){document.getElementById('apiKeyInput').value=state.apiKe
 function saveSettings(){state.apiKey=document.getElementById('apiKeyInput').value.trim();state.gasUrl=document.getElementById('gasUrlInput').value.trim();localStorage.setItem('gr_apikey',state.apiKey);localStorage.setItem('gr_gasurl',state.gasUrl);showToast('設定を保存しました');}
 function exportData(){const d={records:state.records,dictionary:state.dictionary,genbas:state.genbas,exportedAt:new Date().toISOString()};const b=new Blob([JSON.stringify(d,null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='genba-rec-'+new Date().toISOString().slice(0,10)+'.json';a.click();showToast('エクスポート完了');}
 
-// GOOGLE SHEETS
+// GOOGLE SHEETS - 分割送信（テキスト→写真1枚ずつ）
+function updateSaveProgress(msg){
+  const btn=document.getElementById('saveBtn');
+  if(btn) btn.textContent=msg;
+  debugLog(msg);
+}
+async function gasPostRaw(payload){
+  const res=await fetch(state.gasUrl,{method:'POST',headers:{'Content-Type':'text/plain'},body:JSON.stringify(payload)});
+  if(!res.ok) throw new Error('HTTP '+res.status);
+  const text=await res.text();
+  let result;
+  try{result=JSON.parse(text);}catch(e){throw new Error('応答パース失敗（GASタイムアウトの可能性）');}
+  if(result.success===false) throw new Error(result.message||'GASエラー');
+  return result;
+}
 async function sendToSheet(rec){
   if(!state.gasUrl) return;
   const genba=state.genbas.find(g=>g.id===rec.genbaId);
-  const payload={subject:genba?genba.name:(rec.context||''),subjectDetail:'',type:rec.recType||'日常記録',category:rec.category||'',transcript:rec.transcript||'',corrected:rec.corrected||'',structured:rec.structured?JSON.stringify(rec.structured):'',photos:rec.photos||[]};
-  const payloadSize=JSON.stringify(payload).length;
-  debugLog('シート送信中... ('+Math.round(payloadSize/1024)+'KB, 写真'+((rec.photos||[]).length)+'枚)');
+  const photos=rec.photos||[];
+  const photoCount=photos.length;
+
+  // Step 1: テキスト情報のみ送信
+  updateSaveProgress('保存中... テキスト送信');
+  const textPayload={
+    _action:'save_record_text',
+    subject:genba?genba.name:(rec.context||''),
+    subjectDetail:'',
+    type:rec.recType||'日常記録',
+    category:rec.category||'',
+    transcript:rec.transcript||'',
+    corrected:rec.corrected||'',
+    structured:rec.structured?JSON.stringify(rec.structured):''
+  };
   try{
-    const res=await fetch(state.gasUrl,{method:'POST',headers:{'Content-Type':'text/plain'},body:JSON.stringify(payload)});
-    if(!res.ok) throw new Error('HTTP '+res.status);
-    const text=await res.text();
-    let result;
-    try{result=JSON.parse(text);}catch(e){throw new Error('応答パース失敗（GASタイムアウトの可能性）');}
-    debugLog('送信結果: '+JSON.stringify(result).substring(0,150));
-    if(result.success!==false){rec.syncStatus='sent';persistRecords();autoCleanup();showToast('スプレッドシートに送信しました');}
-    else{rec.syncStatus='failed';persistRecords();throw new Error(result.message||'GASエラー');}
+    const textResult=await gasPostRaw(textPayload);
+    debugLog('テキスト保存結果: '+JSON.stringify(textResult).substring(0,150));
+    if(textResult.duplicate){
+      rec.syncStatus='sent';persistRecords();
+      showToast('既に登録済みです（重複スキップ）','info');
+      return;
+    }
+    const rowNum=textResult.row;
+    if(!rowNum||rowNum<2) throw new Error('行番号が取得できませんでした');
+
+    // Step 2: 写真を1枚ずつ送信
+    for(let i=0;i<photoCount;i++){
+      if(!photos[i]) continue;
+      updateSaveProgress('保存中... 写真 '+(i+1)+'/'+photoCount);
+      await gasPostRaw({
+        _action:'save_photo',
+        row:rowNum,
+        photoIndex:i,
+        photo:photos[i]
+      });
+    }
+
+    rec.syncStatus='sent';persistRecords();autoCleanup();
+    updateSaveProgress('保存完了 ✓');
+    showToast('スプレッドシートに送信しました'+(photoCount>0?' (写真'+photoCount+'枚)':''));
   }catch(err){
     debugLog('送信エラー: '+err.message);
     rec.syncStatus='failed';persistRecords();
-    throw err; // 呼び出し元でハンドリング
+    throw err;
   }
 }
 async function testGas(){
